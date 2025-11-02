@@ -22,9 +22,10 @@ RUN cargo build --release
 # Runtime stage
 FROM debian:bookworm-slim
 
-# Install runtime dependencies
+# Install runtime dependencies including netcat for database connectivity check
 RUN apt-get update && apt-get install -y \
     ca-certificates \
+    netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
 # Create app user
@@ -36,8 +37,12 @@ WORKDIR /app
 # Copy the binary from builder stage
 COPY --from=builder /app/target/release/whatsapp-nutrition-bot /app/whatsapp-nutrition-bot
 
+# Copy entrypoint script
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+
 # Create data directories with proper permissions
 RUN mkdir -p /app/data/images && \
+    chmod +x /app/docker-entrypoint.sh && \
     chown -R appuser:appuser /app
 
 # Switch to non-root user
@@ -50,5 +55,6 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
-# Run the application
+# Run the application with entrypoint
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["./whatsapp-nutrition-bot"]

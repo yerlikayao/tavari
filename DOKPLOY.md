@@ -64,7 +64,10 @@ Dokploy'da "Docker Compose" seçeneğini seç ve `docker-compose.yml` dosyasın�
 
 ### DNS Hatası: "failed to lookup address information"
 
-Bu hata, `DATABASE_URL`'de `localhost` kullandığınızda oluşur. Çözüm:
+Bu hata genellikle şu durumlardan kaynaklanır:
+
+#### 1. Localhost Kullanımı (En Yaygın)
+`DATABASE_URL`'de `localhost` kullandığınızda oluşur:
 
 ```bash
 # Yanlış (localhost kullanıyor)
@@ -72,6 +75,52 @@ DATABASE_URL=postgresql://nutrition_user:nutrition_password@localhost:5432/nutri
 
 # Doğru (service ismini kullanıyor)
 DATABASE_URL=postgresql://nutrition_user:nutrition_password@postgres:5432/nutrition_bot
+```
+
+#### 2. Network Eksikliği
+`docker-compose.yml` dosyasında network tanımı eksikse DNS çözümlemesi çalışmaz. **Bu çok kritik!**
+
+**Yanlış (network yok):**
+```yaml
+services:
+  postgres:
+    image: postgres:15-alpine
+    # network tanımı eksik!
+
+  app:
+    # network tanımı eksik!
+```
+
+**Doğru (network var):**
+```yaml
+services:
+  postgres:
+    image: postgres:15-alpine
+    networks:
+      - app-network
+
+  app:
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+```
+
+#### 3. Servisler Çalışma Sırası
+Uygulama, PostgreSQL hazır olmadan başlamaya çalışabilir. `docker-entrypoint.sh` scripti bu sorunu çözer:
+
+```bash
+#!/bin/bash
+# PostgreSQL'in hazır olmasını bekler
+for i in {1..30}; do
+    if nc -z "$DB_HOST" "$DB_PORT"; then
+        echo "PostgreSQL is ready!"
+        break
+    fi
+    sleep 1
+done
 ```
 
 ### Container Başlamıyor
