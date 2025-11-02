@@ -39,4 +39,18 @@ fi
 
 # Switch to appuser and start the application
 echo "Starting application as appuser..."
-exec su-exec appuser "$@" 2>/dev/null || exec gosu appuser "$@" 2>/dev/null || exec "$@"
+echo "Command to execute: $@"
+echo "Working directory: $(pwd)"
+echo "App user UID/GID: $(id appuser)"
+ls -la /app/whatsapp-nutrition-bot
+
+if command -v gosu > /dev/null 2>&1; then
+    echo "Using gosu to switch to appuser..."
+    exec gosu appuser "$@"
+elif command -v su-exec > /dev/null 2>&1; then
+    echo "Using su-exec to switch to appuser..."
+    exec su-exec appuser "$@"
+else
+    echo "Using su to switch to appuser..."
+    exec su -s /bin/sh appuser -c "exec $*"
+fi
