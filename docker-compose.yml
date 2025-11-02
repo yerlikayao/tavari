@@ -1,0 +1,44 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: whatsapp-nutrition-postgres
+    environment:
+      POSTGRES_DB: nutrition_bot
+      POSTGRES_USER: nutrition_user
+      POSTGRES_PASSWORD: nutrition_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nutrition_user -d nutrition_bot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: whatsapp-nutrition-bot
+    environment:
+      - DATABASE_URL=postgresql://nutrition_user:nutrition_password@postgres:5432/nutrition_bot
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENROUTER_MODEL=meta-llama/llama-4-scout:free
+      - BIRD_API_KEY=${BIRD_API_KEY}
+      - BIRD_WORKSPACE_ID=${BIRD_WORKSPACE_ID}
+      - BIRD_CHANNEL_ID=${BIRD_CHANNEL_ID}
+      - BIRD_WEBHOOK_SECRET=${BIRD_WEBHOOK_SECRET}
+      - RUST_LOG=info
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

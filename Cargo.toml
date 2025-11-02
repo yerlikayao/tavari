@@ -1,0 +1,36 @@
+[package]
+name = "whatsapp-nutrition-bot"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1.35", features = ["full"] }
+reqwest = { version = "0.11", features = ["json", "multipart"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+# PostgreSQL database
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid"] }
+tokio-cron-scheduler = "0.10"
+dotenv = "0.15"
+anyhow = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.8"
+base64 = "0.21"
+log = "0.4"
+env_logger = "0.11"
+async-trait = "0.1"
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+
+# Optional: Webhook server (uncomment to enable)
+axum = { version = "0.7", optional = true }
+tower = { version = "0.4", optional = true }
+
+[features]
+default = ["webhook-server"]
+webhook-server = ["axum", "tower"]
+
+# WhatsApp için alternatif: whatsappweb-rs veya kendi API wrapper'ımız
+# Not: Rust için tam özellikli WhatsApp Web library henüz çok olgun değil
+# Bu yüzden REST API yaklaşımı veya whatsmeow (Go) wrapper kullanabiliriz

@@ -1,0 +1,183 @@
+use anyhow::Result;
+use serde::{Deserialize, Serialize};
+use super::WhatsAppService;
+
+/// Bird.com (MessageBird) WhatsApp Business API client
+pub struct BirdComClient {
+    api_key: String,
+    workspace_id: String,
+    channel_id: String,
+    client: reqwest::Client,
+}
+
+#[derive(Serialize)]
+struct BirdMessage {
+    receiver: Receiver,
+    body: Body,
+}
+
+#[derive(Serialize)]
+struct Receiver {
+    contacts: Vec<Contact>,
+}
+
+#[derive(Serialize)]
+struct Contact {
+    #[serde(rename = "identifierValue")]
+    identifier_value: String,
+}
+
+#[derive(Serialize)]
+struct Body {
+    #[serde(rename = "type")]
+    msg_type: String,
+    text: TextContent,
+}
+
+#[derive(Serialize)]
+struct TextContent {
+    text: String,
+}
+
+#[derive(Deserialize)]
+struct BirdResponse {
+    id: String,
+}
+
+impl BirdComClient {
+    pub fn new(api_key: String, workspace_id: String, channel_id: String) -> Self {
+        Self {
+            api_key,
+            workspace_id,
+            channel_id,
+            client: reqwest::Client::new(),
+        }
+    }
+
+    fn api_url(&self, path: &str) -> String {
+        format!("https://api.bird.com/workspaces/{}{}", self.workspace_id, path)
+    }
+}
+
+#[async_trait::async_trait]
+impl WhatsAppService for BirdComClient {
+    async fn send_message(&self, to: &str, message: &str) -> Result<()> {
+        let url = self.api_url(&format!("/channels/{}/messages", self.channel_id));
+
+        let payload = BirdMessage {
+            receiver: Receiver {
+                contacts: vec![Contact {
+                    identifier_value: to.to_string(),
+                }],
+            },
+            body: Body {
+                msg_type: "text".to_string(),
+                text: TextContent {
+                    text: message.to_string(),
+                },
+            },
+        };
+
+        log::info!("🔍 DEBUG - Sending to URL: {}", url);
+        log::info!("🔍 DEBUG - Payload: {}", serde_json::to_string_pretty(&payload)?);
+
+        let response = self
+            .client
+            .post(&url)
+            .header("Authorization", format!("AccessKey {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .json(&payload)
+            .send()
+            .await?;
+
+        let status = response.status();
+        let response_text = response.text().await?;
+        
+        log::info!("🔍 DEBUG - Response Status: {}", status);
+        log::info!("🔍 DEBUG - Response Body: {}", response_text);
+
+        if !status.is_success() {
+            anyhow::bail!("Bird.com API error ({}): {}", status, response_text);
+        }
+
+        let result: BirdResponse = serde_json::from_str(&response_text)?;
+        log::info!("📤 OUTGOING MESSAGE - To: {} | Message ID: {} | Content: '{}'",
+                   to, result.id, message);
+
+        Ok(())
+    }
+
+    async fn send_image(&self, to: &str, image_path: &str, caption: &str) -> Result<()> {
+        // Bird.com media workflow:
+        // 1. Upload image to Bird.com media endpoint
+        // 2. Get media URL/ID
+        // 3. Send message with media reference
+
+        log::info!("📸 Sending image via Bird.com: {} to {} with caption: {}",
+                   image_path, to, caption);
+
+        // For now, send caption as text message
+        // TODO: Implement proper media upload
+        self.send_message(to, &format!("📷 [Image: {}]\n{}", image_path, caption)).await?;
+
+        Ok(())
+    }
+
+    async fn download_media(&self, message_id: &str, output_path: &str) -> Result<String> {
+        // Bird.com media download
+        // GET /workspaces/{workspaceId}/messages/{messageId}/media
+
+        log::info!("📥 Downloading media from Bird.com: message_id={}", message_id);
+
+        let url = self.api_url(&format!("/messages/{}/media", message_id));
+
+        let response = self
+            .client
+            .get(&url)
+            .header("Authorization", format!("AccessKey {}", self.api_key))
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await?;
+            anyhow::bail!("Bird.com media download error ({}): {}", status, error_text);
+        }
+
+        // Save to file
+        let bytes = response.bytes().await?;
+        std::fs::write(output_path, bytes)?;
+
+        log::info!("✅ Media downloaded to: {}", output_path);
+        Ok(output_path.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_bird_client_creation() {
+        let client = BirdComClient::new(
+            "test_key".to_string(),
+            "workspace_123".to_string(),
+            "channel_456".to_string(),
+        );
+
+        assert_eq!(client.workspace_id, "workspace_123");
+        assert_eq!(client.channel_id, "channel_456");
+    }
+
+    #[test]
+    fn test_api_url_generation() {
+        let client = BirdComClient::new(
+            "test_key".to_string(),
+            "workspace_123".to_string(),
+            "channel_456".to_string(),
+        );
+
+        let url = client.api_url("/channels/channel_456/messages");
+        assert_eq!(url, "https://api.bird.com/workspaces/workspace_123/channels/channel_456/messages");
+    }
+}

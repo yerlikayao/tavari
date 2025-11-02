@@ -1,0 +1,224 @@
+use anyhow::Result;
+use std::sync::Arc;
+use tokio_cron_scheduler::{Job, JobScheduler};
+
+use crate::services::{Database, WhatsAppService};
+
+pub struct ReminderService {
+    db: Arc<Database>,
+    whatsapp: Arc<dyn WhatsAppService>,
+    scheduler: JobScheduler,
+}
+
+impl ReminderService {
+    pub async fn new(db: Arc<Database>, whatsapp: Arc<dyn WhatsAppService>) -> Result<Self> {
+        let scheduler = JobScheduler::new().await?;
+
+        Ok(Self {
+            db,
+            whatsapp,
+            scheduler,
+        })
+    }
+
+    pub async fn start(&mut self) -> Result<()> {
+        // Personalized meal reminders - Her 30 dakikada bir kontrol et
+        self.add_personalized_meal_reminders().await?;
+
+        // Su içme hatırlatması (Her 2 saatte bir, 08:00-22:00 arası)
+        self.add_water_reminder("0 0 8,10,12,14,16,18,20,22 * * *").await?;
+
+        // Günlük özet (22:00)
+        self.add_daily_summary("0 0 22 * * *").await?;
+
+        self.scheduler.start().await?;
+
+        log::info!("✅ Reminder service started (personalized)");
+        Ok(())
+    }
+
+    async fn add_personalized_meal_reminders(&mut self) -> Result<()> {
+        let db = self.db.clone();
+        let whatsapp = self.whatsapp.clone();
+
+        // Her 30 dakikada bir çalış ve kullanıcıların öğün saatlerini kontrol et
+        let job = Job::new_async("0 0,30 * * * *", move |_uuid, _l| {
+            let db = db.clone();
+            let whatsapp = whatsapp.clone();
+
+            Box::pin(async move {
+                use chrono::Utc;
+                use chrono_tz::Tz;
+
+                if let Ok(users) = db.get_all_users().await {
+                    log::debug!("🔄 Meal reminder check running for {} users", users.len());
+                    for user in users {
+                        if !user.onboarding_completed {
+                            log::debug!("⏭️ Skipping {} - onboarding not completed", user.phone_number);
+                            continue;
+                        }
+
+                        // Kullanıcının timezone'unda mevcut saati hesapla
+                        let user_tz: Tz = user.timezone.parse().unwrap_or(chrono_tz::Europe::Istanbul);
+                        let now_utc = Utc::now();
+                        let now_user = now_utc.with_timezone(&user_tz);
+                        let current_time = now_user.format("%H:%M").to_string();
+
+                        log::debug!("⏰ User {} - Current time: {} (TZ: {})", user.phone_number, current_time, user.timezone);
+
+                        // Kahvaltı kontrolü
+                        if user.breakfast_reminder {
+                            if let Some(ref breakfast_time) = user.breakfast_time {
+                                log::debug!("🍳 Checking breakfast for {}: current={}, target={}", user.phone_number, current_time, breakfast_time);
+                                if &current_time == breakfast_time {
+                                    let msg = "☀️ Günaydın! Kahvaltı zamanı!\n\nKahvaltını yaptıktan sonra fotoğrafını göndermeyi unutma 📸";
+                                    let _ = whatsapp.send_message(&user.phone_number, msg).await;
+                                    log::info!("📤 Sent breakfast reminder to {} ({})", user.phone_number, user.timezone);
+                                }
+                            }
+                        }
+
+                        // Öğle yemeği kontrolü
+                        if user.lunch_reminder {
+                            if let Some(ref lunch_time) = user.lunch_time {
+                                log::debug!("🍱 Checking lunch for {}: current={}, target={}", user.phone_number, current_time, lunch_time);
+                                if &current_time == lunch_time {
+                                    let msg = "🌞 Öğle yemeği zamanı!\n\nÖğle yemeğini yaptıktan sonra fotoğrafını paylaş 📸";
+                                    let _ = whatsapp.send_message(&user.phone_number, msg).await;
+                                    log::info!("📤 Sent lunch reminder to {} ({})", user.phone_number, user.timezone);
+                                }
+                            }
+                        }
+
+                        // Akşam yemeği kontrolü
+                        if user.dinner_reminder {
+                            if let Some(ref dinner_time) = user.dinner_time {
+                                log::debug!("🍽️ Checking dinner for {}: current={}, target={}", user.phone_number, current_time, dinner_time);
+                                if &current_time == dinner_time {
+                                    let msg = "🌙 Akşam yemeği zamanı!\n\nAkşam yemeğini kaydedelim 📸";
+                                    let _ = whatsapp.send_message(&user.phone_number, msg).await;
+                                    log::info!("📤 Sent dinner reminder to {} ({})", user.phone_number, user.timezone);
+                                }
+                            }
+                        }
+                    }
+                    log::debug!("✅ Meal reminder check completed");
+                }
+            })
+        })?;
+
+        self.scheduler.add(job).await?;
+        log::info!("✅ Added personalized meal reminders (checks every 30 min)");
+        Ok(())
+    }
+
+    async fn add_water_reminder(&mut self, _schedule: &str) -> Result<()> {
+        let db = self.db.clone();
+        let whatsapp = self.whatsapp.clone();
+
+        // Her saat başı kontrol et, kullanıcı timezone'unda su içme saatleri (8,10,12,14,16,18,20,22)
+        let job = Job::new_async("0 0 * * * *", move |_uuid, _l| {
+            let db = db.clone();
+            let whatsapp = whatsapp.clone();
+
+            Box::pin(async move {
+                use chrono::Utc;
+                use chrono::Timelike;
+                use chrono_tz::Tz;
+
+                let message = "💧 Su içme zamanı!\n\nEn az 1 bardak su içmeyi unutma. Su içtikten sonra kaydedebilirsin (örn: '250 ml su içtim')";
+
+                if let Ok(users) = db.get_all_users().await {
+                    log::debug!("💧 Water reminder check running for {} users", users.len());
+                    for user in users {
+                        if user.water_reminder && user.onboarding_completed {
+                            // Kullanıcının timezone'unda mevcut saati hesapla
+                            let user_tz: Tz = user.timezone.parse().unwrap_or(chrono_tz::Europe::Istanbul);
+                            let now_utc = Utc::now();
+                            let now_user = now_utc.with_timezone(&user_tz);
+                            let current_hour = now_user.hour();
+
+                            log::debug!("💧 User {} - Current hour: {} (TZ: {}), checking if in [8,10,12,14,16,18,20,22]", user.phone_number, current_hour, user.timezone);
+
+                            // Su içme saatleri: 8,10,12,14,16,18,20,22
+                            if [8, 10, 12, 14, 16, 18, 20, 22].contains(&current_hour) {
+                                let _ = whatsapp.send_message(&user.phone_number, message).await;
+                                log::info!("📤 Sent water reminder to {} at {}:00 ({})", user.phone_number, current_hour, user.timezone);
+                            }
+                        } else {
+                            log::debug!("⏭️ Skipping water reminder for {} (reminder={}, onboarded={})", user.phone_number, user.water_reminder, user.onboarding_completed);
+                        }
+                    }
+                    log::debug!("✅ Water reminder check completed");
+                }
+            })
+        })?;
+
+        self.scheduler.add(job).await?;
+        log::info!("Added water reminder (timezone-aware)");
+        Ok(())
+    }
+
+    async fn add_daily_summary(&mut self, _schedule: &str) -> Result<()> {
+        let db = self.db.clone();
+        let whatsapp = self.whatsapp.clone();
+
+        // Her saat başı kontrol et, kullanıcı timezone'unda 22:00'da gönder
+        let job = Job::new_async("0 0 * * * *", move |_uuid, _l| {
+            let db = db.clone();
+            let whatsapp = whatsapp.clone();
+
+            Box::pin(async move {
+                use chrono::Utc;
+                use chrono::Timelike;
+                use chrono_tz::Tz;
+
+                if let Ok(users) = db.get_all_users().await {
+                    log::debug!("📊 Daily summary check running for {} users", users.len());
+                    for user in users {
+                        if !user.onboarding_completed {
+                            log::debug!("⏭️ Skipping {} - onboarding not completed", user.phone_number);
+                            continue;
+                        }
+
+                        // Kullanıcının timezone'unda mevcut saati hesapla
+                        let user_tz: Tz = user.timezone.parse().unwrap_or(chrono_tz::Europe::Istanbul);
+                        let now_utc = Utc::now();
+                        let now_user = now_utc.with_timezone(&user_tz);
+                        let current_hour = now_user.hour();
+
+                        log::debug!("📊 User {} - Current hour: {} (TZ: {}), checking if == 22", user.phone_number, current_hour, user.timezone);
+
+                        // 22:00'da günlük özet gönder
+                        if current_hour == 22 {
+                            let today = now_user.date_naive();
+                            if let Ok(stats) = db.get_daily_stats(&user.phone_number, today).await {
+                                let report = crate::services::whatsapp::format_daily_report(
+                                    stats.total_calories,
+                                    stats.total_water_ml,
+                                    stats.meals_count,
+                                    stats.water_logs_count,
+                                );
+
+                                let message = format!("🌙 *Günlük Özet*\n\n{}", report);
+                                let _ = whatsapp.send_message(&user.phone_number, &message).await;
+                                log::info!("📤 Sent daily summary to {} at 22:00 ({})", user.phone_number, user.timezone);
+                            }
+                        }
+                    }
+                    log::debug!("✅ Daily summary check completed");
+                }
+            })
+        })?;
+
+        self.scheduler.add(job).await?;
+        log::info!("Added daily summary reminder (timezone-aware)");
+        Ok(())
+    }
+
+    pub async fn stop(&mut self) -> Result<()> {
+        self.scheduler.shutdown().await?;
+        log::info!("Reminder service stopped");
+        Ok(())
+    }
+}

@@ -1,0 +1,441 @@
+use anyhow::Result;
+use chrono::{Local, Utc};
+use std::sync::Arc;
+
+use crate::models::{Meal, MealType, User, WaterLog};
+use crate::services::{Database, OpenRouterService, WhatsAppService};
+use crate::handlers::OnboardingHandler;
+
+pub struct MessageHandler {
+    db: Arc<Database>,
+    openai: Arc<OpenRouterService>,  // OpenRouter kullanıyoruz (OpenAI uyumlu)
+    whatsapp: Arc<dyn WhatsAppService>,
+}
+
+impl MessageHandler {
+    pub fn new(
+        db: Arc<Database>,
+        openai: Arc<OpenRouterService>,
+        whatsapp: Arc<dyn WhatsAppService>,
+    ) -> Self {
+        Self {
+            db,
+            openai,
+            whatsapp,
+        }
+    }
+
+    pub async fn handle_message(
+        &self,
+        from: &str,
+        message: &str,
+        has_media: bool,
+        media_path: Option<String>,
+    ) -> Result<()> {
+        // LOG: Gelen mesajı kaydet
+        log::info!("📨 INCOMING MESSAGE - From: {} | Content: '{}' | Has Media: {} | Media Path: {:?}",
+                   from, message, has_media, media_path);
+
+        // Kullanıcıyı kontrol et veya oluştur
+        self.ensure_user_exists(from).await?;
+
+        // Kullanıcı bilgilerini al
+        let user = self.db.get_user(from).await?.ok_or_else(|| anyhow::anyhow!("User not found"))?;
+
+        // Onboarding tamamlanmamışsa, onboarding handler'a yönlendir
+        if !user.onboarding_completed {
+            log::info!("👤 User {} in onboarding phase (step: {:?})", from, user.onboarding_step);
+
+            // İlk mesajda onboarding başlamasın, sadece bilgilendirme mesajı gönder
+            if user.onboarding_step.is_none() {
+                let info_msg = "👋 *Beslenme Takip Botuna Hoş Geldiniz!*\n\n\
+                               Öncelikli olarak öğünlerinizin saatini girmelisiniz.\n\n\
+                               *Herhangi bir mesaj yazarak onboarding'i başlatabilirsiniz.*\n\
+                               (Örneğin: 'merhaba' veya 'başla')";
+
+                self.whatsapp.send_message(from, info_msg).await?;
+                self.db.update_onboarding_step(from, Some("ready_to_start".to_string())).await?;
+                return Ok(());
+            }
+
+            let onboarding_handler = OnboardingHandler::new(self.db.clone(), self.whatsapp.clone());
+            onboarding_handler.handle_step(&user, message).await?;
+            return Ok(());
+        }
+
+        let message_lower = message.to_lowercase();
+
+        // Komut kontrolü
+        if message_lower.starts_with("/") || message_lower.starts_with("!") {
+            self.handle_command(from, &message_lower).await?;
+            return Ok(());
+        }
+
+        // Resim varsa kalori analizi yap
+        if has_media {
+            if let Some(image_path) = media_path {
+                self.handle_food_image(from, &image_path).await?;
+                return Ok(());
+            }
+        }
+
+        // Su tüketimi kaydı
+        if message_lower.contains("su") && (message_lower.contains("içtim") || message_lower.contains("ml")) {
+            self.handle_water_log(from, message).await?;
+            return Ok(());
+        }
+
+        // Varsayılan yardım mesajı
+        self.send_help_message(from).await?;
+
+        Ok(())
+    }
+
+    async fn ensure_user_exists(&self, phone: &str) -> Result<()> {
+        if self.db.get_user(phone).await?.is_none() {
+            let user = User {
+                phone_number: phone.to_string(),
+                created_at: Utc::now(),
+                onboarding_completed: false,
+                onboarding_step: None,  // Onboarding handler başlatacak
+                breakfast_reminder: true,
+                lunch_reminder: true,
+                dinner_reminder: true,
+                water_reminder: true,
+                breakfast_time: None,
+                lunch_time: None,
+                dinner_time: None,
+                opted_in: true,
+                timezone: "Europe/Istanbul".to_string(),  // Varsayılan Türkiye
+            };
+            self.db.create_user(&user).await?;
+            log::info!("✅ New user created: {}", phone);
+        }
+        Ok(())
+    }
+
+    async fn handle_food_image(&self, from: &str, image_path: &str) -> Result<()> {
+        match self.openai.analyze_food_image(image_path).await {
+            Ok(calorie_info) => {
+                // Direkt kaydet
+                let meal = Meal {
+                    id: None,
+                    user_phone: from.to_string(),
+                    meal_type: MealType::Snack, // Kullanıcı belirtebilir
+                    calories: calorie_info.calories,
+                    description: calorie_info.description.clone(),
+                    image_path: Some(image_path.to_string()),
+                    created_at: Utc::now(),
+                };
+
+                self.db.add_meal(&meal).await?;
+
+                let today = Local::now().date_naive();
+                let stats = self.db.get_daily_stats(from, today).await?;
+
+                let summary = format!(
+                    "✅ Kaydedildi!\n\n\
+                     🔥 Kalori: {:.0} kcal\n\
+                     📝 {}\n\n\
+                     📊 Günlük toplam: {:.0} kcal ({} öğün)",
+                    calorie_info.calories,
+                    calorie_info.description,
+                    stats.total_calories,
+                    stats.meals_count
+                );
+
+                self.whatsapp.send_message(from, &summary).await?;
+            }
+            Err(e) => {
+                log::error!("Image analysis error: {}", e);
+                self.whatsapp
+                    .send_message(from, "❌ Resim analiz edilemedi. Lütfen tekrar dene.")
+                    .await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn handle_water_log(&self, from: &str, message: &str) -> Result<()> {
+        // Mesajdan ml miktarını çıkar
+        let amount = self.parse_water_amount(message);
+
+        let water_log = WaterLog {
+            id: None,
+            user_phone: from.to_string(),
+            amount_ml: amount,
+            created_at: Utc::now(),
+        };
+
+        self.db.add_water_log(&water_log).await?;
+
+        let today = Local::now().date_naive();
+        let stats = self.db.get_daily_stats(from, today).await?;
+
+        let response = format!(
+            "💧 {} ml su kaydedildi!\n\n\
+             Bugünkü toplam: {} ml ({:.1} litre)\n\
+             Hedef: 2000 ml (2 litre)",
+            amount,
+            stats.total_water_ml,
+            stats.total_water_ml as f64 / 1000.0
+        );
+
+        self.whatsapp.send_message(from, &response).await?;
+
+        Ok(())
+    }
+
+    fn parse_water_amount(&self, message: &str) -> i32 {
+        // Basit parsing - "250 ml", "1 bardak", "200ml" vb.
+        if message.contains("bardak") {
+            return 250; // 1 bardak = ~250ml
+        }
+
+        // "ml" veya "ML" kelimesini kaldır
+        let cleaned = message.replace("ml", " ").replace("ML", " ");
+
+        // Sayıyı bul
+        let words: Vec<&str> = cleaned.split_whitespace().collect();
+        for word in words {
+            if let Ok(amount) = word.parse::<i32>() {
+                if amount > 0 && amount <= 2000 {
+                    return amount;
+                }
+            }
+        }
+
+        250 // varsayılan
+    }
+
+    async fn handle_command(&self, from: &str, command: &str) -> Result<()> {
+        let cmd_parts: Vec<&str> = command.trim().split_whitespace().collect();
+        let main_cmd = cmd_parts.get(0).unwrap_or(&"");
+
+        match *main_cmd {
+            "/rapor" | "/report" => {
+                let today = Local::now().date_naive();
+                let stats = self.db.get_daily_stats(from, today).await?;
+
+                let report = crate::services::whatsapp::format_daily_report(
+                    stats.total_calories,
+                    stats.total_water_ml,
+                    stats.meals_count,
+                    stats.water_logs_count,
+                );
+
+                self.whatsapp.send_message(from, &report).await?;
+            }
+            "/yardim" | "/help" => {
+                self.send_help_message(from).await?;
+            }
+            "/gecmis" | "/history" => {
+                let meals = self.db.get_recent_meals(from, 5).await?;
+                let mut response = "📜 Son 5 Öğün:\n\n".to_string();
+
+                for (i, meal) in meals.iter().enumerate() {
+                    response.push_str(&format!(
+                        "{}. {} - {:.0} kcal\n   {}\n   {}\n\n",
+                        i + 1,
+                        meal.meal_type.to_string(),
+                        meal.calories,
+                        meal.description,
+                        meal.created_at.format("%d.%m.%Y %H:%M")
+                    ));
+                }
+
+                if meals.is_empty() {
+                    response = "Henüz kayıtlı öğün yok.".to_string();
+                }
+
+                self.whatsapp.send_message(from, &response).await?;
+            }
+            "/tavsiye" | "/advice" => {
+                let today = Local::now().date_naive();
+                let stats = self.db.get_daily_stats(from, today).await?;
+
+                match self
+                    .openai
+                    .get_nutrition_advice(stats.total_calories, stats.total_water_ml)
+                    .await
+                {
+                    Ok(advice) => {
+                        self.whatsapp.send_message(from, &advice).await?;
+                    }
+                    Err(e) => {
+                        log::error!("Failed to get nutrition advice: {}", e);
+                        self.whatsapp
+                            .send_message(from, "Şu anda tavsiye alınamıyor.")
+                            .await?;
+                    }
+                }
+            }
+            "/ayarlar" | "/settings" => {
+                self.handle_settings_command(from).await?;
+            }
+            "/saat" | "/time" => {
+                self.handle_time_command(from, &cmd_parts).await?;
+            }
+            "/timezone" | "/tz" => {
+                self.handle_timezone_command(from, &cmd_parts).await?;
+            }
+            _ => {
+                self.whatsapp
+                    .send_message(from, "Bilinmeyen komut. /yardim yazarak komutları görebilirsin.")
+                    .await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn handle_settings_command(&self, from: &str) -> Result<()> {
+        let user = self.db.get_user(from).await?.ok_or_else(|| anyhow::anyhow!("User not found"))?;
+
+        let breakfast_time = user.breakfast_time.unwrap_or_else(|| "Ayarlanmamış".to_string());
+        let lunch_time = user.lunch_time.unwrap_or_else(|| "Ayarlanmamış".to_string());
+        let dinner_time = user.dinner_time.unwrap_or_else(|| "Ayarlanmamış".to_string());
+
+        let breakfast_status = if user.breakfast_reminder { "✅" } else { "❌" };
+        let lunch_status = if user.lunch_reminder { "✅" } else { "❌" };
+        let dinner_status = if user.dinner_reminder { "✅" } else { "❌" };
+        let water_status = if user.water_reminder { "✅" } else { "❌" };
+
+        let message = format!(
+            "⚙️ *Ayarlarınız*\n\n\
+             🕐 *Öğün Saatleri:*\n\
+             Kahvaltı: {} {}\n\
+             Öğle: {} {}\n\
+             Akşam: {} {}\n\n\
+             💧 Su Hatırlatma: {}\n\n\
+             🌍 Zaman Dilimi: {}\n\n\
+             *Komutlar:*\n\
+             /saat kahvalti HH:MM - Kahvaltı saatini değiştir\n\
+             /saat ogle HH:MM - Öğle yemeği saatini değiştir\n\
+             /saat aksam HH:MM - Akşam yemeği saatini değiştir\n\
+             /timezone [IANA timezone] - Zaman dilimini değiştir\n\n\
+             Örnek: /saat kahvalti 09:00\n\
+             Örnek: /timezone America/New_York",
+            breakfast_time, breakfast_status,
+            lunch_time, lunch_status,
+            dinner_time, dinner_status,
+            water_status,
+            user.timezone
+        );
+
+        self.whatsapp.send_message(from, &message).await?;
+        Ok(())
+    }
+
+    async fn handle_time_command(&self, from: &str, cmd_parts: &[&str]) -> Result<()> {
+        if cmd_parts.len() < 3 {
+            self.whatsapp.send_message(
+                from,
+                "❌ Kullanım: /saat [kahvalti|ogle|aksam] HH:MM\n\nÖrnek: /saat kahvalti 09:00"
+            ).await?;
+            return Ok(());
+        }
+
+        let meal_type = cmd_parts[1].to_lowercase();
+        let time = cmd_parts[2];
+
+        // Validate time format (HH:MM)
+        if !time.contains(':') || time.len() != 5 {
+            self.whatsapp.send_message(
+                from,
+                "❌ Geçersiz saat formatı. HH:MM formatında olmalı (örn: 09:00)"
+            ).await?;
+            return Ok(());
+        }
+
+        let meal_type_db = match meal_type.as_str() {
+            "kahvalti" | "kahvaltı" | "breakfast" => "breakfast",
+            "ogle" | "öğle" | "lunch" => "lunch",
+            "aksam" | "akşam" | "dinner" => "dinner",
+            _ => {
+                self.whatsapp.send_message(
+                    from,
+                    "❌ Geçersiz öğün tipi. Kullan: kahvalti, ogle, aksam"
+                ).await?;
+                return Ok(());
+            }
+        };
+
+        self.db.update_meal_time(from, meal_type_db, time).await?;
+
+        let meal_display = match meal_type_db {
+            "breakfast" => "Kahvaltı",
+            "lunch" => "Öğle yemeği",
+            "dinner" => "Akşam yemeği",
+            _ => "Öğün"
+        };
+
+        self.whatsapp.send_message(
+            from,
+            &format!("✅ {} saati {} olarak güncellendi!", meal_display, time)
+        ).await?;
+
+        Ok(())
+    }
+
+    async fn handle_timezone_command(&self, from: &str, cmd_parts: &[&str]) -> Result<()> {
+        if cmd_parts.len() < 2 {
+            self.whatsapp.send_message(
+                from,
+                "❌ Kullanım: /timezone [IANA timezone]\n\n\
+                 Örnekler:\n\
+                 /timezone Europe/Istanbul\n\
+                 /timezone America/New_York\n\
+                 /timezone Asia/Tokyo\n\n\
+                 Zaman dilimlerinin listesi: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones"
+            ).await?;
+            return Ok(());
+        }
+
+        let timezone = cmd_parts[1];
+
+        // Validate timezone by trying to parse it
+        match timezone.parse::<chrono_tz::Tz>() {
+            Ok(_) => {
+                // Valid timezone, update in database
+                self.db.update_timezone(from, timezone).await?;
+
+                self.whatsapp.send_message(
+                    from,
+                    &format!("✅ Zaman diliminiz {} olarak güncellendi!", timezone)
+                ).await?;
+            }
+            Err(_) => {
+                self.whatsapp.send_message(
+                    from,
+                    &format!("❌ Geçersiz zaman dilimi: {}\n\n\
+                             IANA timezone formatında olmalı (örn: Europe/Istanbul)\n\
+                             Liste: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones", timezone)
+                ).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn send_help_message(&self, to: &str) -> Result<()> {
+        let help = "📱 *Beslenme Takip Botu*\n\n\
+                   *Kullanım:*\n\
+                   🍽️ Yemek resmi gönder → Kalori analizi\n\
+                   💧 'X ml su içtim' yaz → Su kaydı\n\
+                   📊 /rapor → Günlük özet\n\
+                   📜 /gecmis → Son öğünler\n\
+                   💡 /tavsiye → AI beslenme tavsiyesi\n\
+                   ⚙️ /ayarlar → Ayarlarını görüntüle\n\
+                   🕐 /saat [öğün] [HH:MM] → Öğün saatini değiştir\n\
+                   🌍 /timezone [tz] → Zaman dilimini değiştir\n\
+                   ❓ /yardim → Bu mesaj\n\n\
+                   Otomatik hatırlatmalar:\n\
+                   • Kahvaltı, öğle, akşam (zaman dilimine göre)\n\
+                   • 2 saatte bir su içme";
+
+        self.whatsapp.send_message(to, help).await?;
+        Ok(())
+    }
+}
