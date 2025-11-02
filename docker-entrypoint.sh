@@ -1,6 +1,14 @@
 #!/bin/bash
 set -e
 
+# Fix permissions for volume-mounted data directory
+# This is needed because volume mounts can have wrong ownership
+if [ -d /app/data ]; then
+    echo "Fixing permissions for /app/data..."
+    chown -R appuser:appuser /app/data 2>/dev/null || echo "Warning: Could not change ownership (might be running as non-root)"
+    mkdir -p /app/data/images
+fi
+
 # Extract database connection details from DATABASE_URL
 # Format: postgresql://user:password@host:port/dbname
 if [ -n "$DATABASE_URL" ]; then
@@ -29,5 +37,6 @@ if [ -n "$DATABASE_URL" ]; then
     done
 fi
 
-# Start the application
-exec "$@"
+# Switch to appuser and start the application
+echo "Starting application as appuser..."
+exec su-exec appuser "$@" 2>/dev/null || exec gosu appuser "$@" 2>/dev/null || exec "$@"

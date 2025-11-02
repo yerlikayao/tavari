@@ -27,6 +27,7 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     netcat-openbsd \
     curl \
+    gosu \
     && rm -rf /var/lib/apt/lists/*
 
 # Create app user
@@ -46,11 +47,11 @@ RUN mkdir -p /app/data/images && \
     chmod +x /app/docker-entrypoint.sh && \
     chown -R appuser:appuser /app
 
-# Switch to non-root user
-USER appuser
-
 # Expose port
 EXPOSE 8080
+
+# Note: We don't switch to appuser here because entrypoint needs root
+# to fix volume mount permissions. The entrypoint will switch to appuser.
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
