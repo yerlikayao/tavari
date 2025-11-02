@@ -86,9 +86,16 @@ pub async fn handle_bird_webhook(
                         "./data/images/img_{}.jpg",
                         chrono::Utc::now().timestamp()
                     );
-                    
+
                     // Create directory if not exists
-                    std::fs::create_dir_all("./data/images")?;
+                    log::debug!("📁 Creating directory: ./data/images");
+                    if let Err(e) = std::fs::create_dir_all("./data/images") {
+                        log::error!("❌ Failed to create directory ./data/images: {}", e);
+                        log::error!("   Current directory: {:?}", std::env::current_dir());
+                        log::error!("   Error kind: {:?}", e.kind());
+                        return Err(e.into());
+                    }
+                    log::debug!("✅ Directory exists: ./data/images");
 
                     // Download directly from mediaUrl with AccessKey authentication (redirects enabled)
                     let client = reqwest::Client::builder()
@@ -105,7 +112,18 @@ pub async fn handle_bird_webhook(
                     }
 
                     let bytes = response.bytes().await?;
-                    std::fs::write(&filename, bytes)?;
+                    log::debug!("💾 Writing {} bytes to: {}", bytes.len(), filename);
+                    if let Err(e) = std::fs::write(&filename, bytes) {
+                        log::error!("❌ Failed to write file {}: {}", filename, e);
+                        log::error!("   Error kind: {:?}", e.kind());
+
+                        // Check directory permissions
+                        if let Ok(metadata) = std::fs::metadata("./data/images") {
+                            log::error!("   Directory metadata: readonly={}, is_dir={}",
+                                metadata.permissions().readonly(), metadata.is_dir());
+                        }
+                        return Err(e.into());
+                    }
                     log::info!("✅ Image downloaded from mediaUrl: {}", filename);
 
                     // Handle with caption if present

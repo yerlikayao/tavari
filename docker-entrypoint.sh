@@ -3,11 +3,13 @@ set -e
 
 # Fix permissions for volume-mounted data directory
 # This is needed because volume mounts can have wrong ownership
-if [ -d /app/data ]; then
-    echo "Fixing permissions for /app/data..."
-    chown -R appuser:appuser /app/data 2>/dev/null || echo "Warning: Could not change ownership (might be running as non-root)"
-    mkdir -p /app/data/images
-fi
+echo "Fixing permissions for /app/data..."
+mkdir -p /app/data/images
+chown -R appuser:appuser /app/data
+chmod -R 755 /app/data
+echo "Permissions fixed. Checking:"
+ls -la /app/data/
+ls -la /app/data/images/ 2>/dev/null || echo "images directory is empty"
 
 # Extract database connection details from DATABASE_URL
 # Format: postgresql://user:password@host:port/dbname
