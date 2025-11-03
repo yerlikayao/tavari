@@ -102,19 +102,13 @@ impl Database {
         .await?;
 
         // Update existing users with NULL values to have defaults
-        sqlx::query(
-            r#"
-            UPDATE users
-            SET water_reminder_interval = 120
-            WHERE water_reminder_interval IS NULL;
+        sqlx::query("UPDATE users SET water_reminder_interval = 120 WHERE water_reminder_interval IS NULL")
+            .execute(&self.pool)
+            .await?;
 
-            UPDATE users
-            SET daily_water_goal = 2000
-            WHERE daily_water_goal IS NULL;
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
+        sqlx::query("UPDATE users SET daily_water_goal = 2000 WHERE daily_water_goal IS NULL")
+            .execute(&self.pool)
+            .await?;
 
         Ok(())
     }
