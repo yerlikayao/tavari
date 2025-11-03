@@ -212,20 +212,38 @@ impl Database {
     pub async fn get_daily_stats(&self, user_phone: &str, date: NaiveDate) -> Result<DailyStats> {
         let date_str = date.format("%Y-%m-%d").to_string();
 
+        // Use separate subqueries to avoid Cartesian product
         let result = sqlx::query(
             r#"
             SELECT
-                COALESCE(SUM(m.calories), 0.0) as total_calories,
-                COUNT(m.id) as meals_count,
-                COALESCE(SUM(wl.amount_ml), 0::BIGINT) as total_water,
-                COUNT(wl.id) as water_count
-            FROM (SELECT $1::TEXT as phone) u
-            LEFT JOIN meals m ON m.user_phone = u.phone
-                AND m.created_at >= $2::DATE
-                AND m.created_at < ($2::DATE + INTERVAL '1 day')
-            LEFT JOIN water_logs wl ON wl.user_phone = u.phone
-                AND wl.created_at >= $2::DATE
-                AND wl.created_at < ($2::DATE + INTERVAL '1 day')
+                COALESCE((
+                    SELECT SUM(calories)
+                    FROM meals
+                    WHERE user_phone = $1
+                        AND created_at >= $2::DATE
+                        AND created_at < ($2::DATE + INTERVAL '1 day')
+                ), 0.0) as total_calories,
+                COALESCE((
+                    SELECT COUNT(*)
+                    FROM meals
+                    WHERE user_phone = $1
+                        AND created_at >= $2::DATE
+                        AND created_at < ($2::DATE + INTERVAL '1 day')
+                ), 0) as meals_count,
+                COALESCE((
+                    SELECT SUM(amount_ml)
+                    FROM water_logs
+                    WHERE user_phone = $1
+                        AND created_at >= $2::DATE
+                        AND created_at < ($2::DATE + INTERVAL '1 day')
+                ), 0) as total_water,
+                COALESCE((
+                    SELECT COUNT(*)
+                    FROM water_logs
+                    WHERE user_phone = $1
+                        AND created_at >= $2::DATE
+                        AND created_at < ($2::DATE + INTERVAL '1 day')
+                ), 0) as water_count
             "#,
         )
         .bind(user_phone)

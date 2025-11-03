@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chrono::{Local, Utc};
+use chrono::{Utc, Timelike};
 use std::sync::Arc;
 
 use crate::models::{Meal, MealType, User, WaterLog};
@@ -113,14 +113,98 @@ impl MessageHandler {
         Ok(())
     }
 
+    /// Kullanıcının saatine ve öğün saatlerine göre öğün tipini akıllıca belirle
+    /// Kullanıcının zaman dilimine göre bugünün tarihini al
+    async fn get_user_today(&self, from: &str) -> Result<chrono::NaiveDate> {
+        let user = self.db.get_user(from).await?;
+        let user_tz: chrono_tz::Tz = user
+            .as_ref()
+            .and_then(|u| u.timezone.parse().ok())
+            .unwrap_or(chrono_tz::Europe::Istanbul);
+
+        let now = Utc::now().with_timezone(&user_tz);
+        Ok(now.date_naive())
+    }
+
+    async fn detect_meal_type(&self, from: &str) -> Result<MealType> {
+        // Kullanıcı bilgilerini al
+        let user = match self.db.get_user(from).await? {
+            Some(u) => u,
+            None => return Ok(MealType::Snack), // Kullanıcı yoksa ara öğün
+        };
+
+        // Kullanıcının zaman dilimine göre şu anki saati al
+        let user_tz: chrono_tz::Tz = user.timezone.parse().unwrap_or(chrono_tz::Europe::Istanbul);
+        let now = Utc::now().with_timezone(&user_tz);
+        let current_time = now.time();
+
+        log::debug!("🕐 Detecting meal type for user {} at {} (timezone: {})", from, current_time, user.timezone);
+
+        // Kullanıcının öğün saatlerini parse et
+        let breakfast_time = user.breakfast_time.as_ref()
+            .and_then(|t| chrono::NaiveTime::parse_from_str(t, "%H:%M").ok());
+        let lunch_time = user.lunch_time.as_ref()
+            .and_then(|t| chrono::NaiveTime::parse_from_str(t, "%H:%M").ok());
+        let dinner_time = user.dinner_time.as_ref()
+            .and_then(|t| chrono::NaiveTime::parse_from_str(t, "%H:%M").ok());
+
+        // Eğer öğün saatleri ayarlanmamışsa varsayılan saatler kullan
+        let breakfast = breakfast_time.unwrap_or_else(|| chrono::NaiveTime::from_hms_opt(9, 0, 0).unwrap());
+        let lunch = lunch_time.unwrap_or_else(|| chrono::NaiveTime::from_hms_opt(13, 0, 0).unwrap());
+        let dinner = dinner_time.unwrap_or_else(|| chrono::NaiveTime::from_hms_opt(19, 0, 0).unwrap());
+
+        // Tolerans: ±2 saat
+        let tolerance = chrono::Duration::hours(2);
+
+        // Kahvaltı zamanı mı? (Kahvaltı saati ± 2 saat)
+        if Self::is_within_time_range(current_time, breakfast, tolerance) {
+            log::info!("🍳 Detected meal type: Breakfast (current: {}, target: {})", current_time, breakfast);
+            return Ok(MealType::Breakfast);
+        }
+
+        // Öğle yemeği zamanı mı?
+        if Self::is_within_time_range(current_time, lunch, tolerance) {
+            log::info!("🍱 Detected meal type: Lunch (current: {}, target: {})", current_time, lunch);
+            return Ok(MealType::Lunch);
+        }
+
+        // Akşam yemeği zamanı mı?
+        if Self::is_within_time_range(current_time, dinner, tolerance) {
+            log::info!("🍽️ Detected meal type: Dinner (current: {}, target: {})", current_time, dinner);
+            return Ok(MealType::Dinner);
+        }
+
+        // Hiçbir ana öğün zamanına denk gelmiyorsa ara öğün
+        log::info!("🍪 Detected meal type: Snack (current: {}, not matching any main meal)", current_time);
+        Ok(MealType::Snack)
+    }
+
+    /// Bir zamanın hedef zaman ± tolerans aralığında olup olmadığını kontrol et
+    fn is_within_time_range(current: chrono::NaiveTime, target: chrono::NaiveTime, tolerance: chrono::Duration) -> bool {
+        // Zamanları dakika cinsine çevir (gece yarısından bu yana)
+        let current_mins = current.num_seconds_from_midnight() as i64 / 60;
+        let target_mins = target.num_seconds_from_midnight() as i64 / 60;
+        let tolerance_mins = tolerance.num_minutes();
+
+        // Fark hesapla (gün sınırını dikkate alarak)
+        let diff = (current_mins - target_mins).abs();
+
+        // Gün sınırı kontrolü (örn: 23:00 ile 01:00 arası)
+        let diff_wrapped = std::cmp::min(diff, 1440 - diff); // 1440 = 24 * 60
+
+        diff_wrapped <= tolerance_mins
+    }
+
     async fn handle_food_image(&self, from: &str, image_path: &str) -> Result<()> {
         match self.openai.analyze_food_image(image_path).await {
             Ok(calorie_info) => {
-                // Direkt kaydet
+                // Akıllı öğün tespiti
+                let meal_type = self.detect_meal_type(from).await?;
+
                 let meal = Meal {
                     id: None,
                     user_phone: from.to_string(),
-                    meal_type: MealType::Snack, // Kullanıcı belirtebilir
+                    meal_type: meal_type.clone(),
                     calories: calorie_info.calories,
                     description: calorie_info.description.clone(),
                     image_path: Some(image_path.to_string()),
@@ -129,14 +213,32 @@ impl MessageHandler {
 
                 self.db.add_meal(&meal).await?;
 
-                let today = Local::now().date_naive();
+                let today = self.get_user_today(from).await?;
                 let stats = self.db.get_daily_stats(from, today).await?;
+
+                // Öğün tipine göre emoji seç
+                let meal_emoji = match meal_type {
+                    MealType::Breakfast => "🍳",
+                    MealType::Lunch => "🍱",
+                    MealType::Dinner => "🍽️",
+                    MealType::Snack => "🍪",
+                };
+
+                let meal_type_name = match meal_type {
+                    MealType::Breakfast => "Kahvaltı",
+                    MealType::Lunch => "Öğle Yemeği",
+                    MealType::Dinner => "Akşam Yemeği",
+                    MealType::Snack => "Ara Öğün",
+                };
 
                 let summary = format!(
                     "✅ Kaydedildi!\n\n\
+                     {} Öğün Tipi: {}\n\
                      🔥 Kalori: {:.0} kcal\n\
                      📝 {}\n\n\
                      📊 Günlük toplam: {:.0} kcal ({} öğün)",
+                    meal_emoji,
+                    meal_type_name,
                     calorie_info.calories,
                     calorie_info.description,
                     stats.total_calories,
@@ -169,7 +271,7 @@ impl MessageHandler {
 
         self.db.add_water_log(&water_log).await?;
 
-        let today = Local::now().date_naive();
+        let today = self.get_user_today(from).await?;
         let stats = self.db.get_daily_stats(from, today).await?;
 
         let response = format!(
@@ -220,7 +322,7 @@ impl MessageHandler {
         let matched = match *main_word {
             // Rapor komutları
             "rapor" | "report" | "özet" | "ozet" | "summary" => {
-                let today = Local::now().date_naive();
+                let today = self.get_user_today(from).await?;
                 let stats = self.db.get_daily_stats(from, today).await?;
                 let report = crate::services::whatsapp::format_daily_report(
                     stats.total_calories,
@@ -261,7 +363,7 @@ impl MessageHandler {
             }
             // Tavsiye komutları
             "tavsiye" | "öneri" | "oneri" | "advice" | "tip" | "tips" => {
-                let today = Local::now().date_naive();
+                let today = self.get_user_today(from).await?;
                 let stats = self.db.get_daily_stats(from, today).await?;
 
                 match self
