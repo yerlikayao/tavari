@@ -158,13 +158,23 @@ impl OpenRouterService {
             .send()
             .await?;
 
-        log::debug!("📥 OpenRouter response status: {}", response.status());
+        let status = response.status();
+        log::info!("📥 OpenRouter response status: {}", status);
 
-        if !response.status().is_success() {
-            let status = response.status();
+        if !status.is_success() {
             let error_text = response.text().await?;
             log::error!("❌ OpenRouter API error response: {}", error_text);
-            anyhow::bail!("OpenRouter API error ({}): {}", status, error_text);
+
+            // Provide more specific error messages
+            if status == 429 {
+                anyhow::bail!("Rate limit exceeded for OpenRouter API. Free model '{}' may have usage limits.", self.model);
+            } else if status == 401 {
+                anyhow::bail!("OpenRouter API authentication failed. Check API key.");
+            } else if status == 503 {
+                anyhow::bail!("OpenRouter service unavailable. Model '{}' may be temporarily down.", self.model);
+            } else {
+                anyhow::bail!("OpenRouter API error ({}): {}", status, error_text);
+            }
         }
 
         let response_text = response.text().await?;
@@ -406,14 +416,32 @@ impl OpenRouterService {
         if !status.is_success() {
             let error_text = response.text().await?;
             log::error!("❌ OpenRouter API error ({}): {}", status, error_text);
-            anyhow::bail!("OpenRouter API error ({}): {}", status, error_text);
+
+            // Provide more specific error messages
+            if status == 429 {
+                anyhow::bail!("Rate limit exceeded for OpenRouter API. Free model '{}' may have usage limits.", self.model);
+            } else if status == 401 {
+                anyhow::bail!("OpenRouter API authentication failed. Check API key.");
+            } else if status == 503 {
+                anyhow::bail!("OpenRouter service unavailable. Model '{}' may be temporarily down.", self.model);
+            } else {
+                anyhow::bail!("OpenRouter API error ({}): {}", status, error_text);
+            }
         }
 
         let chat_response: ChatResponse = response.json().await?;
-        log::info!("✅ Received nutrition advice successfully");
+        log::info!("✅ Received nutrition advice response");
+        log::debug!("📋 Response: {:?}", chat_response);
+
+        // Validate response has choices
+        if chat_response.choices.is_empty() {
+            log::error!("❌ OpenRouter returned empty choices array");
+            anyhow::bail!("OpenRouter returned empty response");
+        }
 
         // Markdown ve özel karakterleri temizle
         let advice = &chat_response.choices[0].message.content;
+        log::info!("✅ Nutrition advice content length: {} chars", advice.len());
         let clean_advice = self.clean_markdown(advice);
 
         Ok(clean_advice)

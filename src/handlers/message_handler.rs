@@ -392,7 +392,8 @@ impl MessageHandler {
                         self.whatsapp.send_message(from, &advice).await?;
                     }
                     Err(e) => {
-                        log::error!("Failed to get nutrition advice: {}", e);
+                        log::error!("❌ Failed to get nutrition advice: {:?}", e);
+                        log::error!("❌ Error details: {}", e);
                         self.whatsapp
                             .send_message(from, "Şu anda tavsiye alınamıyor.")
                             .await?;
