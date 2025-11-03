@@ -99,32 +99,35 @@ impl OpenRouterService {
             content: vec![
                 ContentPart::Text {
                     content_type: "text".to_string(),
-                    text: "SEN BİR GIDA ANALİZİ UZMANISIN. Bu yemek resmini çok dikkatli incele ve aşağıdaki adımları takip et:\n\
+                    text: "Sen bir gıda analizi uzmanısın. Bu yemek resmini analiz et ve kullanıcıya detaylı bilgi ver.\n\
                            \n\
-                           1. YEMEK TANIMA:\n\
-                           - Resimde ne yemekler var? (ana yemek, yan yemekler, içecekler)\n\
-                           - Yemek türünü doğru belirle (Türk mutfağı, fast food, sağlıklı yemek vb.)\n\
-                           - Farklı malzemeleri ayrı ayrı tanı\n\
-                           \n\
-                           2. KALORİ HESAPLAMA:\n\
-                           - Porsiyon büyüklüğünü görsel olarak değerlendir\n\
-                           - Her bileşen için gerçekçi kalori tahmini yap\n\
-                           - Toplam kaloriyi hesapla\n\
-                           \n\
-                           3. BESLENME ANALİZİ:\n\
-                           - Sağlıklı mı değil mi? (sebze, protein, yağ oranı)\n\
-                           - Beslenme değeri (protein, karbonhidrat, yağ)\n\
-                           - Beslenme tavsiyesi\n\
-                           \n\
-                           4. ÖZELLİKLER:\n\
-                           - Pişirme yöntemi (ızgara, kızartma, haşlama vb.)\n\
-                           - Malzeme kalitesi\n\
-                           - Beslenme dengesi\n\
+                           ANALİZ ADIMLARI:\n\
+                           1. Yemekleri tanı (ana yemek, yan yemekler, içecekler)\n\
+                           2. Porsiyon büyüklüğünü değerlendir\n\
+                           3. Toplam kaloriyi hesapla\n\
+                           4. Beslenme değerini analiz et (protein, karbonhidrat, yağ)\n\
+                           5. Sağlık açısından değerlendir\n\
                            \n\
                            CEVAP FORMATI (KESİNLİKLE BU FORMATI KULLAN):\n\
-                           Yemek: [ana yemek adı + yan yemekler]\n\
-                           Kalori: [sadece sayı, kcal birimi olmadan]\n\
-                           Açıklama: [detaylı analiz: ne olduğu, sağlıklı mı, beslenme değeri, porsiyon]".to_string(),
+                           Yemek: [yemek adı ve bileşenler]\n\
+                           Kalori: [sadece sayı - kcal birimi YAZMA]\n\
+                           Porsiyon: [büyüklük açıklaması]\n\
+                           Besin Değeri: [protein/karbonhidrat/yağ dengesi]\n\
+                           Sağlık Notu: [sağlıklı mı, iyileştirme önerileri]\n\
+                           \n\
+                           ÖNEMLİ:\n\
+                           - Markdown kullanma (**, ###, __, vb. YASAK)\n\
+                           - Sadece düz metin kullan\n\
+                           - Her satır net ve kısa olsun\n\
+                           - Kalori satırında SADECE SAYI yaz (örn: Kalori: 650)\n\
+                           - Emoji kullanabilirsin ama az kullan\n\
+                           \n\
+                           ÖRNEK CEVAP:\n\
+                           Yemek: Izgara tavuk göğsü, pilav, salata\n\
+                           Kalori: 520\n\
+                           Porsiyon: Orta büyüklük, yaklaşık 350g\n\
+                           Besin Değeri: Yüksek protein, orta karbonhidrat, düşük yağ\n\
+                           Sağlık Notu: Dengeli ve sağlıklı bir öğün. Salata miktarını arttırabilirsiniz.".to_string(),
                 },
                 ContentPart::ImageUrl {
                     content_type: "image_url".to_string(),
@@ -359,9 +362,21 @@ impl OpenRouterService {
             content: vec![ContentPart::Text {
                 content_type: "text".to_string(),
                 text: format!(
-                    "Bir kullanıcı bugün beslenme takibini yapıyor: {} ve {}. \
-                     Genel sağlıklı beslenme için kısa, pozitif ve motive edici bir öneri ver (2-3 cümle). \
-                     Kullanıcıyı destekleyici ol.",
+                    "Bir beslenme koçu olarak, bugün {} ve {} olan kullanıcıya özel tavsiye ver.\n\
+                     \n\
+                     ÖNEMLI KURALLAR:\n\
+                     1. Sadece düz metin kullan - markdown, bold, italic, başlık işaretleri kullanma\n\
+                     2. Kısa ve öz yaz (maksimum 3 cümle)\n\
+                     3. Pozitif ve motive edici ol\n\
+                     4. Pratik ve uygulanabilir tavsiyeler ver\n\
+                     5. Emojileri sadece cümle başında kullan (✨, 💧, 🥗 gibi)\n\
+                     \n\
+                     FORMAT ÖRNEĞI:\n\
+                     💧 Su tüketiminizi arttırın, günde en az 2 litre su için.\n\
+                     🥗 Sebze ağırlıklı öğünler ekleyin.\n\
+                     ✨ Harika gidiyorsunuz, böyle devam!\n\
+                     \n\
+                     Şimdi kullanıcıya özel tavsiyeni yaz:",
                     calorie_level, water_level
                 ),
             }],
@@ -560,5 +575,29 @@ mod tests {
         assert!(info.description.contains("Pizza"));
         assert!(info.description.contains("Orta boy"));
         assert!(info.description.contains("Detay"));
+    }
+
+    #[test]
+    fn test_parse_response_new_format() {
+        let service = OpenRouterService::new(
+            "test_key".to_string(),
+            "test_model".to_string(),
+        );
+
+        // Yeni geliştirilmiş format
+        let response = "Yemek: Izgara tavuk göğsü, pilav, salata\n\
+                        Kalori: 520\n\
+                        Porsiyon: Orta büyüklük, yaklaşık 350g\n\
+                        Besin Değeri: Yüksek protein, orta karbonhidrat, düşük yağ\n\
+                        Sağlık Notu: Dengeli ve sağlıklı bir öğün";
+        let info = service.parse_response(response).unwrap();
+
+        assert_eq!(info.calories, 520.0);
+        // Tüm alanlar korunmuş olmalı
+        assert!(info.description.contains("Izgara tavuk"));
+        assert!(info.description.contains("Porsiyon"));
+        assert!(info.description.contains("Besin Değeri"));
+        assert!(info.description.contains("Sağlık Notu"));
+        assert!(info.description.contains("Dengeli"));
     }
 }
