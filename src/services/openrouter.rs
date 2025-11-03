@@ -170,6 +170,14 @@ impl OpenRouterService {
                 anyhow::bail!("Rate limit exceeded for OpenRouter API. Free model '{}' may have usage limits.", self.model);
             } else if status == 401 {
                 anyhow::bail!("OpenRouter API authentication failed. Check API key.");
+            } else if status == 403 {
+                // Check if it's a moderation error
+                if error_text.contains("moderation") || error_text.contains("flagged") {
+                    log::error!("❌ Content moderation false positive: {}", error_text);
+                    anyhow::bail!("Content moderation error - AI provider blocked the request. This is likely a false positive.");
+                } else {
+                    anyhow::bail!("OpenRouter API access forbidden (403): {}", error_text);
+                }
             } else if status == 503 {
                 anyhow::bail!("OpenRouter service unavailable. Model '{}' may be temporarily down.", self.model);
             } else {
@@ -343,6 +351,109 @@ impl OpenRouterService {
         })
     }
 
+    pub async fn analyze_text_meal(&self, meal_description: &str) -> Result<CalorieInfo> {
+        log::info!("📝 Analyzing text meal description: {}", meal_description);
+
+        let messages = vec![ChatMessage {
+            role: "user".to_string(),
+            content: vec![ContentPart::Text {
+                content_type: "text".to_string(),
+                text: format!(
+                    "Sen bir gıda analizi uzmanısın. Kullanıcının yazdığı yemek açıklamasını analiz et.\n\
+                     \n\
+                     KULLANICININ YAZDIĞI: \"{}\"\n\
+                     \n\
+                     GÖREVİN:\n\
+                     1. Yemeği/yemekleri tanımla\n\
+                     2. Porsiyon büyüklüğünü tahmin et\n\
+                     3. Toplam kaloriyi hesapla\n\
+                     4. Beslenme değerini değerlendir\n\
+                     \n\
+                     CEVAP FORMATI (KESİNLİKLE BU FORMATI KULLAN):\n\
+                     Yemek: [yemek adı ve bileşenler]\n\
+                     Kalori: [sadece sayı - kcal birimi YAZMA]\n\
+                     Porsiyon: [büyüklük tahmini]\n\
+                     Besin Değeri: [protein/karbonhidrat/yağ dengesi]\n\
+                     Sağlık Notu: [kısa değerlendirme]\n\
+                     \n\
+                     ÖNEMLİ:\n\
+                     - Markdown kullanma (**, ###, __, vb. YASAK)\n\
+                     - Sadece düz metin kullan\n\
+                     - Kalori satırında SADECE SAYI yaz\n\
+                     - Porsiyon bilgisi verilmediyse ortalama bir porsiyon varsay\n\
+                     \n\
+                     ÖRNEK:\n\
+                     Yemek: Izgara tavuk göğsü, salata\n\
+                     Kalori: 350\n\
+                     Porsiyon: Orta büyüklük (tahmini 250g)\n\
+                     Besin Değeri: Yüksek protein, düşük karbonhidrat\n\
+                     Sağlık Notu: Hafif ve sağlıklı bir öğün",
+                    meal_description
+                ),
+            }],
+        }];
+
+        let request = ChatRequest {
+            model: self.model.clone(),
+            messages,
+            max_tokens: 300,
+        };
+
+        log::info!("🤖 Sending text meal analysis request to OpenRouter with model: {}", self.model);
+
+        let response = self
+            .client
+            .post("https://openrouter.ai/api/v1/chat/completions")
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .header("HTTP-Referer", "https://github.com/tavari-bot")
+            .header("X-Title", "Tavari Nutrition Bot")
+            .json(&request)
+            .send()
+            .await?;
+
+        let status = response.status();
+        log::info!("📥 OpenRouter response status: {}", status);
+
+        if !status.is_success() {
+            let error_text = response.text().await?;
+            log::error!("❌ OpenRouter API error response: {}", error_text);
+
+            // Provide more specific error messages
+            if status == 429 {
+                anyhow::bail!("Rate limit exceeded for OpenRouter API. Free model '{}' may have usage limits.", self.model);
+            } else if status == 401 {
+                anyhow::bail!("OpenRouter API authentication failed. Check API key.");
+            } else if status == 403 {
+                // Check if it's a moderation error
+                if error_text.contains("moderation") || error_text.contains("flagged") {
+                    log::error!("❌ Content moderation false positive: {}", error_text);
+                    anyhow::bail!("Content moderation error - AI provider blocked the request. This is likely a false positive.");
+                } else {
+                    anyhow::bail!("OpenRouter API access forbidden (403): {}", error_text);
+                }
+            } else if status == 503 {
+                anyhow::bail!("OpenRouter service unavailable. Model '{}' may be temporarily down.", self.model);
+            } else {
+                anyhow::bail!("OpenRouter API error ({}): {}", status, error_text);
+            }
+        }
+
+        let response_text = response.text().await?;
+        log::debug!("📄 Raw OpenRouter response size: {} bytes", response_text.len());
+
+        let chat_response: ChatResponse = serde_json::from_str(&response_text)?;
+        log::debug!("✅ Parsed OpenRouter response successfully");
+
+        let content = &chat_response.choices[0].message.content;
+        log::info!("💬 OpenRouter text meal analysis: {}", content);
+
+        // Parse the response
+        let calorie_info = self.parse_response(content)?;
+
+        Ok(calorie_info)
+    }
+
     pub async fn get_nutrition_advice(&self, daily_calories: f64, daily_water: i64, water_goal: i32, meals_count: i64) -> Result<String> {
         log::info!("🤖 Requesting nutrition advice for {} kcal, {} ml water, {} meals", daily_calories, daily_water, meals_count);
 
@@ -351,36 +462,37 @@ impl OpenRouterService {
             content: vec![ContentPart::Text {
                 content_type: "text".to_string(),
                 text: format!(
-                    "Sen bir beslenme koçusun. Kullanıcının bugünkü verilerine göre özel tavsiye ver.\n\
+                    "You are a positive wellness coach providing encouraging feedback about someone's daily nutrition tracking.\n\
                      \n\
-                     KULLANICI VERİLERİ (BUGÜN):\n\
-                     - Toplam Kalori: {:.0} kcal\n\
-                     - Öğün Sayısı: {} öğün\n\
-                     - Su Tüketimi: {} ml ({:.1} litre)\n\
-                     - Su Hedefi: {} ml ({:.1} litre)\n\
+                     TODAY'S NUTRITION DATA:\n\
+                     - Total Calories: {:.0} kcal\n\
+                     - Number of Meals: {}\n\
+                     - Water Intake: {} ml ({:.1} liters)\n\
+                     - Water Target: {} ml ({:.1} liters)\n\
                      \n\
-                     GÖREVİN:\n\
-                     Bu verilere bakarak kullanıcıya BUGÜNKÜ performansı hakkında geri bildirim ver.\n\
-                     - Kalori alımı yeterli mi, az mı, fazla mı?\n\
-                     - Öğün sayısı dengeli mi? (3 ana + ara öğünler ideal)\n\
-                     - Su hedefine ne kadar yaklaştı? Daha ne kadar içmesi gerekiyor?\n\
-                     - Bugünü nasıl değerlendirirsin?\n\
+                     TASK:\n\
+                     Give positive, motivating feedback about today's progress in Turkish.\n\
+                     - Comment on calorie intake appropriateness\n\
+                     - Assess meal frequency (3 main meals + snacks is ideal)\n\
+                     - Note progress toward water goal\n\
+                     - Give an overall encouraging assessment\n\
                      \n\
-                     KURALLAR:\n\
-                     1. Sadece düz metin kullan - markdown (**, ###, __) YASAK\n\
-                     2. Kısa ve öz yaz (maksimum 4 cümle)\n\
-                     3. SAYISAL VERİLERİ KULLAN - kullanıcı kendi rakamlarını görmek ister\n\
-                     4. Pozitif ve motive edici ol\n\
-                     5. Pratik öneriler ver (bugün için)\n\
-                     6. Emojileri sadece cümle başında kullan (💧, 🥗, ✨, 🎯)\n\
+                     RESPONSE RULES:\n\
+                     1. Use plain text only - NO markdown (**, ###, __)\n\
+                     2. Keep it brief (maximum 4 sentences)\n\
+                     3. USE THE ACTUAL NUMBERS - users want to see their data\n\
+                     4. Be positive and motivating\n\
+                     5. Give practical suggestions for today\n\
+                     6. Use emojis only at start of sentences (💧, 🥗, ✨, 🎯)\n\
+                     7. WRITE IN TURKISH\n\
                      \n\
-                     ÖRNEK FORMAT:\n\
+                     EXAMPLE FORMAT (in Turkish):\n\
                      🎯 Bugün 1500 kcal aldınız, hedef için 500 kcal daha ekleyebilirsiniz.\n\
                      💧 Su hedefinize 700 ml kaldı, akşama kadar 2-3 bardak daha için.\n\
                      🥗 3 öğün güzel ama bir ara öğünde meyve eklerseniz daha dengeli olur.\n\
                      ✨ Gayet iyi gidiyorsunuz!\n\
                      \n\
-                     Şimdi kullanıcıya BUGÜNKÜ VERİLERİNE göre tavsiye ver:",
+                     Now provide encouraging feedback in Turkish based on the data above:",
                     daily_calories,
                     meals_count,
                     daily_water,
@@ -422,6 +534,14 @@ impl OpenRouterService {
                 anyhow::bail!("Rate limit exceeded for OpenRouter API. Free model '{}' may have usage limits.", self.model);
             } else if status == 401 {
                 anyhow::bail!("OpenRouter API authentication failed. Check API key.");
+            } else if status == 403 {
+                // Check if it's a moderation error
+                if error_text.contains("moderation") || error_text.contains("flagged") {
+                    log::error!("❌ Content moderation false positive: {}", error_text);
+                    anyhow::bail!("Content moderation error - AI provider blocked the request. This is likely a false positive.");
+                } else {
+                    anyhow::bail!("OpenRouter API access forbidden (403): {}", error_text);
+                }
             } else if status == 503 {
                 anyhow::bail!("OpenRouter service unavailable. Model '{}' may be temporarily down.", self.model);
             } else {

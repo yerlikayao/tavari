@@ -34,6 +34,19 @@ pub trait WhatsAppService: Send + Sync {
     async fn send_image(&self, to: &str, image_path: &str, caption: &str) -> Result<()>;
     #[allow(dead_code)]
     async fn download_media(&self, message_id: &str, output_path: &str) -> Result<String>;
+
+    /// Send a message with quick reply buttons (WhatsApp interactive messages)
+    /// buttons: Vec of (id, title) pairs (max 3 buttons)
+    /// Default implementation sends plain text (for clients that don't support buttons)
+    async fn send_message_with_buttons(
+        &self,
+        to: &str,
+        message: &str,
+        _buttons: Vec<(String, String)>,
+    ) -> Result<()> {
+        // Default implementation: just send the message without buttons
+        self.send_message(to, message).await
+    }
 }
 
 // Mock implementasyon - gerçek WhatsApp entegrasyonu için değiştirilmeli

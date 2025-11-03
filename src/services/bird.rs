@@ -28,15 +28,54 @@ struct Contact {
 }
 
 #[derive(Serialize)]
-struct Body {
-    #[serde(rename = "type")]
-    msg_type: String,
-    text: TextContent,
+#[serde(untagged)]
+enum Body {
+    Text {
+        #[serde(rename = "type")]
+        msg_type: String,
+        text: TextContent,
+    },
+    Interactive {
+        #[serde(rename = "type")]
+        msg_type: String,
+        interactive: InteractiveContent,
+    },
 }
 
 #[derive(Serialize)]
 struct TextContent {
     text: String,
+}
+
+#[derive(Serialize)]
+struct InteractiveContent {
+    #[serde(rename = "type")]
+    interactive_type: String,
+    body: InteractiveBody,
+    action: InteractiveAction,
+}
+
+#[derive(Serialize)]
+struct InteractiveBody {
+    text: String,
+}
+
+#[derive(Serialize)]
+struct InteractiveAction {
+    buttons: Vec<InteractiveButton>,
+}
+
+#[derive(Serialize)]
+struct InteractiveButton {
+    #[serde(rename = "type")]
+    button_type: String,
+    reply: ButtonReply,
+}
+
+#[derive(Serialize)]
+struct ButtonReply {
+    id: String,
+    title: String,
 }
 
 #[derive(Deserialize)]
@@ -57,10 +96,95 @@ impl BirdComClient {
     fn api_url(&self, path: &str) -> String {
         format!("https://api.bird.com/workspaces/{}{}", self.workspace_id, path)
     }
+
+    /// Send a message with quick reply buttons (max 3 buttons)
+    pub async fn send_message_with_buttons(
+        &self,
+        to: &str,
+        message: &str,
+        buttons: Vec<(String, String)>, // (id, title) pairs
+    ) -> Result<()> {
+        if buttons.is_empty() || buttons.len() > 3 {
+            anyhow::bail!("Buttons must be between 1 and 3 items");
+        }
+
+        let url = self.api_url(&format!("/channels/{}/messages", self.channel_id));
+
+        let interactive_buttons: Vec<InteractiveButton> = buttons
+            .into_iter()
+            .map(|(id, title)| InteractiveButton {
+                button_type: "reply".to_string(),
+                reply: ButtonReply { id, title },
+            })
+            .collect();
+
+        let payload = BirdMessage {
+            receiver: Receiver {
+                contacts: vec![Contact {
+                    identifier_value: to.to_string(),
+                }],
+            },
+            body: Body::Interactive {
+                msg_type: "interactive".to_string(),
+                interactive: InteractiveContent {
+                    interactive_type: "button".to_string(),
+                    body: InteractiveBody {
+                        text: message.to_string(),
+                    },
+                    action: InteractiveAction {
+                        buttons: interactive_buttons,
+                    },
+                },
+            },
+        };
+
+        log::info!("🔍 DEBUG - Sending interactive message to URL: {}", url);
+        log::info!("🔍 DEBUG - Payload: {}", serde_json::to_string_pretty(&payload)?);
+
+        let response = self
+            .client
+            .post(&url)
+            .header("Authorization", format!("AccessKey {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .json(&payload)
+            .send()
+            .await?;
+
+        let status = response.status();
+        let response_text = response.text().await?;
+
+        log::info!("🔍 DEBUG - Response Status: {}", status);
+        log::info!("🔍 DEBUG - Response Body: {}", response_text);
+
+        if !status.is_success() {
+            anyhow::bail!("Bird.com API error ({}): {}", status, response_text);
+        }
+
+        let result: BirdResponse = serde_json::from_str(&response_text)?;
+        log::info!(
+            "📤 OUTGOING INTERACTIVE MESSAGE - To: {} | Message ID: {} | Content: '{}' | Buttons: {}",
+            to,
+            result.id,
+            message,
+            "(interactive buttons)"
+        );
+
+        Ok(())
+    }
 }
 
 #[async_trait::async_trait]
 impl WhatsAppService for BirdComClient {
+    async fn send_message_with_buttons(
+        &self,
+        to: &str,
+        message: &str,
+        buttons: Vec<(String, String)>,
+    ) -> Result<()> {
+        // Use the concrete implementation
+        self.send_message_with_buttons(to, message, buttons).await
+    }
+
     async fn send_message(&self, to: &str, message: &str) -> Result<()> {
         let url = self.api_url(&format!("/channels/{}/messages", self.channel_id));
 
@@ -70,7 +194,7 @@ impl WhatsAppService for BirdComClient {
                     identifier_value: to.to_string(),
                 }],
             },
-            body: Body {
+            body: Body::Text {
                 msg_type: "text".to_string(),
                 text: TextContent {
                     text: message.to_string(),

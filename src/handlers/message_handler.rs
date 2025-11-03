@@ -65,6 +65,12 @@ impl MessageHandler {
 
         let message_lower = message.trim().to_lowercase();
 
+        // Button ID'lerini kontrol et (WhatsApp interactive button responses)
+        if message_lower.starts_with("water_") {
+            self.handle_water_button(from, message).await?;
+            return Ok(());
+        }
+
         // Resim varsa öncelik ver (komutlardan önce)
         if has_media {
             if let Some(image_path) = media_path {
@@ -197,6 +203,73 @@ impl MessageHandler {
         diff_wrapped <= tolerance_mins
     }
 
+    async fn handle_text_meal(&self, from: &str, description: &str) -> Result<()> {
+        // AI'dan yemek analizi al
+        match self.openai.analyze_text_meal(description).await {
+            Ok(calorie_info) => {
+                // Akıllı öğün tespiti
+                let meal_type = self.detect_meal_type(from).await?;
+
+                let meal = Meal {
+                    id: None,
+                    user_phone: from.to_string(),
+                    meal_type: meal_type.clone(),
+                    calories: calorie_info.calories,
+                    description: calorie_info.description.clone(),
+                    image_path: None, // Text-based meal, no image
+                    created_at: Utc::now(),
+                };
+
+                self.db.add_meal(&meal).await?;
+
+                let today = self.get_user_today(from).await?;
+                let stats = self.db.get_daily_stats(from, today).await?;
+
+                // Öğün tipine göre emoji seç
+                let meal_emoji = match meal_type {
+                    MealType::Breakfast => "🍳",
+                    MealType::Lunch => "🍱",
+                    MealType::Dinner => "🍽️",
+                    MealType::Snack => "🍪",
+                };
+
+                let meal_type_name = match meal_type {
+                    MealType::Breakfast => "Kahvaltı",
+                    MealType::Lunch => "Öğle Yemeği",
+                    MealType::Dinner => "Akşam Yemeği",
+                    MealType::Snack => "Ara Öğün",
+                };
+
+                let summary = format!(
+                    "✅ Kaydedildi!\n\n\
+                     {} Öğün Tipi: {}\n\
+                     🔥 Kalori: {:.0} kcal\n\
+                     📝 {}\n\n\
+                     📊 Günlük toplam: {:.0} kcal ({} öğün)",
+                    meal_emoji,
+                    meal_type_name,
+                    calorie_info.calories,
+                    calorie_info.description,
+                    stats.total_calories,
+                    stats.meals_count
+                );
+
+                self.whatsapp.send_message(from, &summary).await?;
+            }
+            Err(e) => {
+                log::error!("❌ Failed to analyze text meal: {}", e);
+                self.whatsapp
+                    .send_message(
+                        from,
+                        "❌ Yemek analiz edilemedi. Lütfen daha detaylı açıklama yazın veya resim gönderin.",
+                    )
+                    .await?;
+            }
+        }
+
+        Ok(())
+    }
+
     async fn handle_food_image(&self, from: &str, image_path: &str) -> Result<()> {
         match self.openai.analyze_food_image(image_path).await {
             Ok(calorie_info) => {
@@ -260,6 +333,55 @@ impl MessageHandler {
         Ok(())
     }
 
+    async fn handle_water_button(&self, from: &str, button_id: &str) -> Result<()> {
+        // Button ID'den miktarı çıkar (örn: "water_150" -> 150)
+        let amount = button_id
+            .trim_start_matches("water_")
+            .parse::<i32>()
+            .unwrap_or(200);
+
+        let water_log = WaterLog {
+            id: None,
+            user_phone: from.to_string(),
+            amount_ml: amount,
+            created_at: Utc::now(),
+        };
+
+        self.db.add_water_log(&water_log).await?;
+
+        let today = self.get_user_today(from).await?;
+        let stats = self.db.get_daily_stats(from, today).await?;
+
+        // Kullanıcının su hedefini al
+        let user = self.db.get_user(from).await?;
+        let water_goal = user.and_then(|u| u.daily_water_goal).unwrap_or(2000);
+
+        let response = format!(
+            "✅ {} ml su kaydedildi!\n\n\
+             Bugünkü toplam: {} ml ({:.1} litre)\n\
+             Hedef: {} ml ({:.1} litre)\n\n\
+             Hızlı kayıt için aşağıdaki butonları kullanabilirsiniz:",
+            amount,
+            stats.total_water_ml,
+            stats.total_water_ml as f64 / 1000.0,
+            water_goal,
+            water_goal as f64 / 1000.0
+        );
+
+        // Su kaydı sonrası tekrar butonlar göster
+        let buttons = vec![
+            ("water_150".to_string(), "💧 150 ml".to_string()),
+            ("water_250".to_string(), "💧 250 ml".to_string()),
+            ("water_500".to_string(), "💧 500 ml".to_string()),
+        ];
+
+        self.whatsapp
+            .send_message_with_buttons(from, &response, buttons)
+            .await?;
+
+        Ok(())
+    }
+
     async fn handle_water_log(&self, from: &str, message: &str) -> Result<()> {
         // Mesajdan ml miktarını çıkar
         let amount = self.parse_water_amount(message);
@@ -283,7 +405,8 @@ impl MessageHandler {
         let response = format!(
             "💧 {} ml su kaydedildi!\n\n\
              Bugünkü toplam: {} ml ({:.1} litre)\n\
-             Hedef: {} ml ({:.1} litre)",
+             Hedef: {} ml ({:.1} litre)\n\n\
+             Hızlı kayıt için aşağıdaki butonları kullanabilirsiniz:",
             amount,
             stats.total_water_ml,
             stats.total_water_ml as f64 / 1000.0,
@@ -291,7 +414,16 @@ impl MessageHandler {
             water_goal as f64 / 1000.0
         );
 
-        self.whatsapp.send_message(from, &response).await?;
+        // Su kaydı sonrası hızlı butonlar ekle
+        let buttons = vec![
+            ("water_150".to_string(), "💧 150 ml".to_string()),
+            ("water_250".to_string(), "💧 250 ml".to_string()),
+            ("water_500".to_string(), "💧 500 ml".to_string()),
+        ];
+
+        self.whatsapp
+            .send_message_with_buttons(from, &response, buttons)
+            .await?;
 
         Ok(())
     }
@@ -394,8 +526,18 @@ impl MessageHandler {
                     Err(e) => {
                         log::error!("❌ Failed to get nutrition advice: {:?}", e);
                         log::error!("❌ Error details: {}", e);
+
+                        // Provide more user-friendly error messages
+                        let error_msg = if e.to_string().contains("moderation") {
+                            "⚠️ AI hizmeti geçici olarak kullanılamıyor (içerik moderasyonu hatası). Lütfen daha sonra tekrar deneyin."
+                        } else if e.to_string().contains("Rate limit") {
+                            "⚠️ Çok fazla istek gönderildi. Lütfen birkaç dakika sonra tekrar deneyin."
+                        } else {
+                            "⚠️ Şu anda tavsiye alınamıyor. Lütfen daha sonra tekrar deneyin."
+                        };
+
                         self.whatsapp
-                            .send_message(from, "Şu anda tavsiye alınamıyor.")
+                            .send_message(from, error_msg)
                             .await?;
                     }
                 }
@@ -424,6 +566,20 @@ impl MessageHandler {
             // Su hedefi komutları
             "suhedefi" | "watergoal" | "suhedfi" => {
                 self.handle_water_goal_command(from, &parts).await?;
+                true
+            }
+            // Öğün kayıt komutları (text-based meal logging)
+            "ogun" | "yemek" | "meal" | "food" => {
+                if parts.len() < 2 {
+                    self.whatsapp.send_message(
+                        from,
+                        "❌ Kullanım: ogun [yemek açıklaması]\n\nÖrnek: ogun tavuk göğsü ve salata"
+                    ).await?;
+                } else {
+                    // Tüm kelime parçalarını birleştir (ilk kelime hariç)
+                    let description = parts[1..].join(" ");
+                    self.handle_text_meal(from, &description).await?;
+                }
                 true
             }
             _ => false,
@@ -664,11 +820,14 @@ impl MessageHandler {
         let help = "📱 *Beslenme Takip Botu*\n\n\
                    *Kullanım:*\n\
                    🍽️ Yemek resmi gönder → Kalori analizi\n\
-                   💧 'X ml su içtim' yaz → Su kaydı\n\n\
+                   📝 'ogun [açıklama]' yaz → Text ile öğün kaydı\n\
+                   💧 'X ml su içtim' yaz → Su kaydı\n\
+                   💧 Butonlarla hızlı su kaydı (150ml, 250ml, 500ml)\n\n\
                    *Komutlar:* (slash '/' opsiyonel)\n\
                    📊 rapor, özet → Günlük özet\n\
                    📜 geçmiş, tarihçe → Son öğünler\n\
                    💡 tavsiye, öneri → AI beslenme tavsiyesi (bugünkü verilere göre)\n\
+                   🍽️ ogun [açıklama] → Text ile yemek kaydet (örn: ogun tavuk ve salata)\n\
                    ⚙️ ayarlar → Ayarlarını görüntüle\n\
                    🕐 saat [öğün] [HH:MM] → Öğün saatini değiştir\n\
                    🌍 timezone [tz] → Zaman dilimini değiştir\n\
