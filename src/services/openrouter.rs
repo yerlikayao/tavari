@@ -462,43 +462,20 @@ impl OpenRouterService {
             content: vec![ContentPart::Text {
                 content_type: "text".to_string(),
                 text: format!(
-                    "You are a positive wellness coach providing encouraging feedback about someone's daily nutrition tracking.\n\
+                    "You are a wellness coach. Provide brief encouraging feedback in Turkish about daily progress.\n\
                      \n\
-                     TODAY'S NUTRITION DATA:\n\
-                     - Total Calories: {:.0} kcal\n\
-                     - Number of Meals: {}\n\
-                     - Water Intake: {} ml ({:.1} liters)\n\
-                     - Water Target: {} ml ({:.1} liters)\n\
+                     Data: {} kcal, {} meals, {} ml water (goal: {} ml)\n\
                      \n\
-                     TASK:\n\
-                     Give positive, motivating feedback about today's progress in Turkish.\n\
-                     - Comment on calorie intake appropriateness\n\
-                     - Assess meal frequency (3 main meals + snacks is ideal)\n\
-                     - Note progress toward water goal\n\
-                     - Give an overall encouraging assessment\n\
+                     Write 3-4 short sentences in Turkish. Use actual numbers. Be positive. No markdown. Start sentences with emoji.\n\
                      \n\
-                     RESPONSE RULES:\n\
-                     1. Use plain text only - NO markdown (**, ###, __)\n\
-                     2. Keep it brief (maximum 4 sentences)\n\
-                     3. USE THE ACTUAL NUMBERS - users want to see their data\n\
-                     4. Be positive and motivating\n\
-                     5. Give practical suggestions for today\n\
-                     6. Use emojis only at start of sentences (💧, 🥗, ✨, 🎯)\n\
-                     7. WRITE IN TURKISH\n\
-                     \n\
-                     EXAMPLE FORMAT (in Turkish):\n\
-                     🎯 Bugün 1500 kcal aldınız, hedef için 500 kcal daha ekleyebilirsiniz.\n\
-                     💧 Su hedefinize 700 ml kaldı, akşama kadar 2-3 bardak daha için.\n\
-                     🥗 3 öğün güzel ama bir ara öğünde meyve eklerseniz daha dengeli olur.\n\
-                     ✨ Gayet iyi gidiyorsunuz!\n\
-                     \n\
-                     Now provide encouraging feedback in Turkish based on the data above:",
+                     Example:\n\
+                     🎯 Bugun 1500 kcal aldiniz, gayet iyi.\n\
+                     💧 Su hedefinize 700 ml kaldi.\n\
+                     ✨ Devam edin!",
                     daily_calories,
                     meals_count,
                     daily_water,
-                    daily_water as f64 / 1000.0,
-                    water_goal,
-                    water_goal as f64 / 1000.0
+                    water_goal
                 ),
             }],
         }];
