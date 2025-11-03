@@ -74,6 +74,48 @@ impl Database {
         .execute(&self.pool)
         .await?;
 
+        // Migration: Add new columns if they don't exist (for existing deployments)
+        // This is safe to run multiple times
+        sqlx::query(
+            r#"
+            DO $$
+            BEGIN
+                -- Add water_reminder_interval column if not exists
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name='users' AND column_name='water_reminder_interval'
+                ) THEN
+                    ALTER TABLE users ADD COLUMN water_reminder_interval INTEGER DEFAULT 120;
+                END IF;
+
+                -- Add daily_water_goal column if not exists
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name='users' AND column_name='daily_water_goal'
+                ) THEN
+                    ALTER TABLE users ADD COLUMN daily_water_goal INTEGER DEFAULT 2000;
+                END IF;
+            END $$;
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        // Update existing users with NULL values to have defaults
+        sqlx::query(
+            r#"
+            UPDATE users
+            SET water_reminder_interval = 120
+            WHERE water_reminder_interval IS NULL;
+
+            UPDATE users
+            SET daily_water_goal = 2000
+            WHERE daily_water_goal IS NULL;
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
         Ok(())
     }
 
