@@ -16,6 +16,8 @@ pub struct User {
     pub dinner_time: Option<String>,     // HH:MM format
     pub opted_in: bool,  // Kullanıcı mesaj gönderdi mi?
     pub timezone: String,  // IANA timezone (örn: "Europe/Istanbul", "America/New_York")
+    pub water_reminder_interval: Option<i32>,  // Su hatırlatma aralığı (dakika cinsinden, varsayılan: 120)
+    pub daily_water_goal: Option<i32>,  // Günlük su hedefi (ml cinsinden, varsayılan: 2000)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

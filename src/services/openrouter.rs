@@ -333,51 +333,50 @@ impl OpenRouterService {
         })
     }
 
-    pub async fn get_nutrition_advice(&self, daily_calories: f64, daily_water: i64) -> Result<String> {
-        log::info!("🤖 Requesting nutrition advice for {} kcal, {} ml water", daily_calories, daily_water);
-
-        // Kategorize calorie and water intake to avoid triggering Meta moderation
-        let calorie_level = if daily_calories < 1200.0 {
-            "düşük enerji alımı"
-        } else if daily_calories < 2000.0 {
-            "orta düzeyde enerji alımı"
-        } else if daily_calories < 2500.0 {
-            "iyi düzeyde enerji alımı"
-        } else {
-            "yüksek enerji alımı"
-        };
-
-        let water_level = if daily_water < 1000 {
-            "az su tüketimi"
-        } else if daily_water < 2000 {
-            "orta düzeyde su tüketimi"
-        } else if daily_water < 3000 {
-            "iyi düzeyde su tüketimi"
-        } else {
-            "yüksek su tüketimi"
-        };
+    pub async fn get_nutrition_advice(&self, daily_calories: f64, daily_water: i64, water_goal: i32, meals_count: i64) -> Result<String> {
+        log::info!("🤖 Requesting nutrition advice for {} kcal, {} ml water, {} meals", daily_calories, daily_water, meals_count);
 
         let messages = vec![ChatMessage {
             role: "user".to_string(),
             content: vec![ContentPart::Text {
                 content_type: "text".to_string(),
                 text: format!(
-                    "Bir beslenme koçu olarak, bugün {} ve {} olan kullanıcıya özel tavsiye ver.\n\
+                    "Sen bir beslenme koçusun. Kullanıcının bugünkü verilerine göre özel tavsiye ver.\n\
                      \n\
-                     ÖNEMLI KURALLAR:\n\
-                     1. Sadece düz metin kullan - markdown, bold, italic, başlık işaretleri kullanma\n\
-                     2. Kısa ve öz yaz (maksimum 3 cümle)\n\
-                     3. Pozitif ve motive edici ol\n\
-                     4. Pratik ve uygulanabilir tavsiyeler ver\n\
-                     5. Emojileri sadece cümle başında kullan (✨, 💧, 🥗 gibi)\n\
+                     KULLANICI VERİLERİ (BUGÜN):\n\
+                     - Toplam Kalori: {:.0} kcal\n\
+                     - Öğün Sayısı: {} öğün\n\
+                     - Su Tüketimi: {} ml ({:.1} litre)\n\
+                     - Su Hedefi: {} ml ({:.1} litre)\n\
                      \n\
-                     FORMAT ÖRNEĞI:\n\
-                     💧 Su tüketiminizi arttırın, günde en az 2 litre su için.\n\
-                     🥗 Sebze ağırlıklı öğünler ekleyin.\n\
-                     ✨ Harika gidiyorsunuz, böyle devam!\n\
+                     GÖREVİN:\n\
+                     Bu verilere bakarak kullanıcıya BUGÜNKÜ performansı hakkında geri bildirim ver.\n\
+                     - Kalori alımı yeterli mi, az mı, fazla mı?\n\
+                     - Öğün sayısı dengeli mi? (3 ana + ara öğünler ideal)\n\
+                     - Su hedefine ne kadar yaklaştı? Daha ne kadar içmesi gerekiyor?\n\
+                     - Bugünü nasıl değerlendirirsin?\n\
                      \n\
-                     Şimdi kullanıcıya özel tavsiyeni yaz:",
-                    calorie_level, water_level
+                     KURALLAR:\n\
+                     1. Sadece düz metin kullan - markdown (**, ###, __) YASAK\n\
+                     2. Kısa ve öz yaz (maksimum 4 cümle)\n\
+                     3. SAYISAL VERİLERİ KULLAN - kullanıcı kendi rakamlarını görmek ister\n\
+                     4. Pozitif ve motive edici ol\n\
+                     5. Pratik öneriler ver (bugün için)\n\
+                     6. Emojileri sadece cümle başında kullan (💧, 🥗, ✨, 🎯)\n\
+                     \n\
+                     ÖRNEK FORMAT:\n\
+                     🎯 Bugün 1500 kcal aldınız, hedef için 500 kcal daha ekleyebilirsiniz.\n\
+                     💧 Su hedefinize 700 ml kaldı, akşama kadar 2-3 bardak daha için.\n\
+                     🥗 3 öğün güzel ama bir ara öğünde meyve eklerseniz daha dengeli olur.\n\
+                     ✨ Gayet iyi gidiyorsunuz!\n\
+                     \n\
+                     Şimdi kullanıcıya BUGÜNKÜ VERİLERİNE göre tavsiye ver:",
+                    daily_calories,
+                    meals_count,
+                    daily_water,
+                    daily_water as f64 / 1000.0,
+                    water_goal,
+                    water_goal as f64 / 1000.0
                 ),
             }],
         }];

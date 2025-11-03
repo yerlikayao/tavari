@@ -36,7 +36,9 @@ impl Database {
                 lunch_time TEXT,
                 dinner_time TEXT,
                 opted_in BOOLEAN DEFAULT FALSE,
-                timezone TEXT DEFAULT 'Europe/Istanbul'
+                timezone TEXT DEFAULT 'Europe/Istanbul',
+                water_reminder_interval INTEGER DEFAULT 120,
+                daily_water_goal INTEGER DEFAULT 2000
             )
             "#,
         )
@@ -81,8 +83,9 @@ impl Database {
             INSERT INTO users (
                 phone_number, created_at, onboarding_completed, onboarding_step,
                 breakfast_reminder, lunch_reminder, dinner_reminder, water_reminder,
-                breakfast_time, lunch_time, dinner_time, opted_in, timezone
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                breakfast_time, lunch_time, dinner_time, opted_in, timezone,
+                water_reminder_interval, daily_water_goal
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
             ON CONFLICT (phone_number) DO NOTHING
             "#,
         )
@@ -99,6 +102,8 @@ impl Database {
         .bind(&user.dinner_time)
         .bind(user.opted_in)
         .bind(&user.timezone)
+        .bind(user.water_reminder_interval)
+        .bind(user.daily_water_goal)
         .execute(&self.pool)
         .await?;
 
@@ -110,7 +115,8 @@ impl Database {
             r#"
             SELECT phone_number, created_at, onboarding_completed, onboarding_step,
                    breakfast_reminder, lunch_reminder, dinner_reminder, water_reminder,
-                   breakfast_time, lunch_time, dinner_time, opted_in, timezone
+                   breakfast_time, lunch_time, dinner_time, opted_in, timezone,
+                   water_reminder_interval, daily_water_goal
             FROM users WHERE phone_number = $1
             "#,
         )
@@ -131,6 +137,8 @@ impl Database {
             dinner_time: row.get(10),
             opted_in: row.get(11),
             timezone: row.get(12),
+            water_reminder_interval: row.get(13),
+            daily_water_goal: row.get(14),
         });
 
         Ok(user)
@@ -141,7 +149,8 @@ impl Database {
             r#"
             SELECT phone_number, created_at, onboarding_completed, onboarding_step,
                    breakfast_reminder, lunch_reminder, dinner_reminder, water_reminder,
-                   breakfast_time, lunch_time, dinner_time, opted_in, timezone
+                   breakfast_time, lunch_time, dinner_time, opted_in, timezone,
+                   water_reminder_interval, daily_water_goal
             FROM users
             "#,
         )
@@ -164,6 +173,8 @@ impl Database {
                 dinner_time: row.get(10),
                 opted_in: row.get(11),
                 timezone: row.get(12),
+                water_reminder_interval: row.get(13),
+                daily_water_goal: row.get(14),
             })
             .collect();
 
@@ -353,6 +364,30 @@ impl Database {
             "UPDATE users SET timezone = $1 WHERE phone_number = $2",
         )
         .bind(timezone)
+        .bind(phone_number)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn update_water_reminder_interval(&self, phone_number: &str, interval_minutes: i32) -> Result<()> {
+        sqlx::query(
+            "UPDATE users SET water_reminder_interval = $1 WHERE phone_number = $2",
+        )
+        .bind(interval_minutes)
+        .bind(phone_number)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn update_water_goal(&self, phone_number: &str, goal_ml: i32) -> Result<()> {
+        sqlx::query(
+            "UPDATE users SET daily_water_goal = $1 WHERE phone_number = $2",
+        )
+        .bind(goal_ml)
         .bind(phone_number)
         .execute(&self.pool)
         .await?;

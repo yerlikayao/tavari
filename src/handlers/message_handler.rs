@@ -106,6 +106,8 @@ impl MessageHandler {
                 dinner_time: None,
                 opted_in: true,
                 timezone: "Europe/Istanbul".to_string(),  // Varsayılan Türkiye
+                water_reminder_interval: Some(120),  // Varsayılan: 2 saat (120 dakika)
+                daily_water_goal: Some(2000),  // Varsayılan: 2 litre (2000 ml)
             };
             self.db.create_user(&user).await?;
             log::info!("✅ New user created: {}", phone);
@@ -274,13 +276,19 @@ impl MessageHandler {
         let today = self.get_user_today(from).await?;
         let stats = self.db.get_daily_stats(from, today).await?;
 
+        // Kullanıcının su hedefini al
+        let user = self.db.get_user(from).await?;
+        let water_goal = user.and_then(|u| u.daily_water_goal).unwrap_or(2000);
+
         let response = format!(
             "💧 {} ml su kaydedildi!\n\n\
              Bugünkü toplam: {} ml ({:.1} litre)\n\
-             Hedef: 2000 ml (2 litre)",
+             Hedef: {} ml ({:.1} litre)",
             amount,
             stats.total_water_ml,
-            stats.total_water_ml as f64 / 1000.0
+            stats.total_water_ml as f64 / 1000.0,
+            water_goal,
+            water_goal as f64 / 1000.0
         );
 
         self.whatsapp.send_message(from, &response).await?;
@@ -366,9 +374,18 @@ impl MessageHandler {
                 let today = self.get_user_today(from).await?;
                 let stats = self.db.get_daily_stats(from, today).await?;
 
+                // Kullanıcının su hedefini al
+                let user = self.db.get_user(from).await?;
+                let water_goal = user.and_then(|u| u.daily_water_goal).unwrap_or(2000);
+
                 match self
                     .openai
-                    .get_nutrition_advice(stats.total_calories, stats.total_water_ml)
+                    .get_nutrition_advice(
+                        stats.total_calories,
+                        stats.total_water_ml,
+                        water_goal,
+                        stats.meals_count
+                    )
                     .await
                 {
                     Ok(advice) => {
@@ -398,6 +415,16 @@ impl MessageHandler {
                 self.handle_timezone_command(from, &parts).await?;
                 true
             }
+            // Su hatırlatma aralığı komutları
+            "suaraligi" | "suaraliği" | "waterinterval" => {
+                self.handle_water_interval_command(from, &parts).await?;
+                true
+            }
+            // Su hedefi komutları
+            "suhedefi" | "watergoal" | "suhedfi" => {
+                self.handle_water_goal_command(from, &parts).await?;
+                true
+            }
             _ => false,
         };
 
@@ -416,25 +443,40 @@ impl MessageHandler {
         let dinner_status = if user.dinner_reminder { "✅" } else { "❌" };
         let water_status = if user.water_reminder { "✅" } else { "❌" };
 
+        let water_interval = user.water_reminder_interval.unwrap_or(120);
+        let water_goal = user.daily_water_goal.unwrap_or(2000);
+
         let message = format!(
             "⚙️ *Ayarlarınız*\n\n\
              🕐 *Öğün Saatleri:*\n\
              Kahvaltı: {} {}\n\
              Öğle: {} {}\n\
              Akşam: {} {}\n\n\
-             💧 Su Hatırlatma: {}\n\n\
+             💧 *Su Ayarları:*\n\
+             Hatırlatma: {}\n\
+             Hatırlatma Aralığı: {} dakika ({} saat)\n\
+             Günlük Hedef: {} ml ({:.1} litre)\n\n\
              🌍 Zaman Dilimi: {}\n\n\
              *Komutlar:* (slash opsiyonel)\n\
              saat kahvalti HH:MM - Kahvaltı saatini değiştir\n\
              saat ogle HH:MM - Öğle yemeği saatini değiştir\n\
              saat aksam HH:MM - Akşam yemeği saatini değiştir\n\
-             timezone [IANA timezone] - Zaman dilimini değiştir\n\n\
-             Örnek: saat kahvalti 09:00\n\
-             Örnek: timezone America/New_York",
+             timezone [IANA timezone] - Zaman dilimini değiştir\n\
+             suaraligi [dakika] - Su hatırlatma aralığını değiştir\n\
+             suhedefi [ml] - Günlük su hedefini değiştir\n\n\
+             Örnekler:\n\
+             saat kahvalti 09:00\n\
+             timezone America/New_York\n\
+             suaraligi 90 (90 dakikada bir hatırlat)\n\
+             suhedefi 2500 (2.5 litre hedef)",
             breakfast_time, breakfast_status,
             lunch_time, lunch_status,
             dinner_time, dinner_status,
             water_status,
+            water_interval,
+            water_interval / 60,
+            water_goal,
+            water_goal as f64 / 1000.0,
             user.timezone
         );
 
@@ -533,6 +575,90 @@ impl MessageHandler {
         Ok(())
     }
 
+    async fn handle_water_interval_command(&self, from: &str, cmd_parts: &[&str]) -> Result<()> {
+        if cmd_parts.len() < 2 {
+            self.whatsapp.send_message(
+                from,
+                "❌ Kullanım: suaraligi [dakika]\n\n\
+                 Örnekler:\n\
+                 suaraligi 60 (1 saatte bir)\n\
+                 suaraligi 90 (1.5 saatte bir)\n\
+                 suaraligi 120 (2 saatte bir)"
+            ).await?;
+            return Ok(());
+        }
+
+        let interval_str = cmd_parts[1];
+        match interval_str.parse::<i32>() {
+            Ok(interval) if interval > 0 && interval <= 480 => {
+                self.db.update_water_reminder_interval(from, interval).await?;
+
+                self.whatsapp.send_message(
+                    from,
+                    &format!("✅ Su hatırlatma aralığı {} dakika ({} saat) olarak güncellendi!",
+                        interval,
+                        interval as f64 / 60.0)
+                ).await?;
+            }
+            Ok(interval) => {
+                self.whatsapp.send_message(
+                    from,
+                    &format!("❌ Geçersiz aralık: {} dakika\nLütfen 1-480 dakika arası bir değer girin.", interval)
+                ).await?;
+            }
+            Err(_) => {
+                self.whatsapp.send_message(
+                    from,
+                    &format!("❌ Geçersiz sayı: {}\nLütfen sayı girin (örn: 120)", interval_str)
+                ).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn handle_water_goal_command(&self, from: &str, cmd_parts: &[&str]) -> Result<()> {
+        if cmd_parts.len() < 2 {
+            self.whatsapp.send_message(
+                from,
+                "❌ Kullanım: suhedefi [ml]\n\n\
+                 Örnekler:\n\
+                 suhedefi 2000 (2 litre)\n\
+                 suhedefi 2500 (2.5 litre)\n\
+                 suhedefi 3000 (3 litre)"
+            ).await?;
+            return Ok(());
+        }
+
+        let goal_str = cmd_parts[1];
+        match goal_str.parse::<i32>() {
+            Ok(goal) if goal >= 500 && goal <= 10000 => {
+                self.db.update_water_goal(from, goal).await?;
+
+                self.whatsapp.send_message(
+                    from,
+                    &format!("✅ Günlük su hedefiniz {} ml ({} litre) olarak güncellendi!",
+                        goal,
+                        goal as f64 / 1000.0)
+                ).await?;
+            }
+            Ok(goal) => {
+                self.whatsapp.send_message(
+                    from,
+                    &format!("❌ Geçersiz hedef: {} ml\nLütfen 500-10000 ml arası bir değer girin.", goal)
+                ).await?;
+            }
+            Err(_) => {
+                self.whatsapp.send_message(
+                    from,
+                    &format!("❌ Geçersiz sayı: {}\nLütfen sayı girin (örn: 2000)", goal_str)
+                ).await?;
+            }
+        }
+
+        Ok(())
+    }
+
     async fn send_help_message(&self, to: &str) -> Result<()> {
         let help = "📱 *Beslenme Takip Botu*\n\n\
                    *Kullanım:*\n\
@@ -541,16 +667,18 @@ impl MessageHandler {
                    *Komutlar:* (slash '/' opsiyonel)\n\
                    📊 rapor, özet → Günlük özet\n\
                    📜 geçmiş, tarihçe → Son öğünler\n\
-                   💡 tavsiye, öneri → AI beslenme tavsiyesi\n\
+                   💡 tavsiye, öneri → AI beslenme tavsiyesi (bugünkü verilere göre)\n\
                    ⚙️ ayarlar → Ayarlarını görüntüle\n\
                    🕐 saat [öğün] [HH:MM] → Öğün saatini değiştir\n\
                    🌍 timezone [tz] → Zaman dilimini değiştir\n\
+                   💧 suhedefi [ml] → Günlük su hedefinizi değiştir\n\
+                   ⏱️ suaraligi [dakika] → Su hatırlatma aralığını değiştir\n\
                    ❓ yardım, ? → Bu mesaj\n\n\
                    *İpucu:* Slash kullanmadan da yazabilirsiniz!\n\
                    Örnek: 'rapor' veya '/rapor' ikisi de çalışır\n\n\
                    *Otomatik hatırlatmalar:*\n\
                    • Kahvaltı, öğle, akşam (zaman dilimine göre)\n\
-                   • 2 saatte bir su içme";
+                   • Su içme (ayarlanabilir, varsayılan 2 saat)";
 
         self.whatsapp.send_message(to, help).await?;
         Ok(())

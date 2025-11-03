@@ -10,5 +10,5 @@ pub struct CalorieInfo {
 #[async_trait::async_trait]
 pub trait AIService: Send + Sync {
     async fn analyze_food_image(&self, image_path: &str) -> Result<CalorieInfo>;
-    async fn get_nutrition_advice(&self, daily_calories: f64, daily_water: i64) -> Result<String>;
+    async fn get_nutrition_advice(&self, daily_calories: f64, daily_water: i64, water_goal: i32, meals_count: i64) -> Result<String>;
 }
