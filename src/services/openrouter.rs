@@ -179,13 +179,68 @@ impl OpenRouterService {
         Ok(calorie_info)
     }
 
+    /// Markdown ve özel karakterleri temizle
+    fn clean_markdown(&self, text: &str) -> String {
+        text
+            // Markdown başlıkları: ###, ##, # -> kaldır
+            .replace("###", "")
+            .replace("##", "")
+            .replace("# ", "")
+            // Markdown bold/italic: **, *, __ -> kaldır
+            .replace("**", "")
+            .replace("__", "")
+            // Markdown liste işaretleri: -, * -> koru (beslenme listelerinde yararlı)
+            // Markdown kod blokları: ``` -> kaldır
+            .replace("```", "")
+            // Markdown bağlantılar: [text](url) -> text
+            .lines()
+            .map(|line| {
+                // [text](url) formatını temizle
+                if line.contains('[') && line.contains("](") {
+                    let mut cleaned = line.to_string();
+                    while let Some(start) = cleaned.find('[') {
+                        if let Some(middle) = cleaned[start..].find("](") {
+                            if let Some(end) = cleaned[start + middle..].find(')') {
+                                let text_start = start + 1;
+                                let text_end = start + middle;
+                                let link_end = start + middle + end + 1;
+                                let text = &cleaned[text_start..text_end];
+                                cleaned = format!("{}{}{}",
+                                    &cleaned[..start],
+                                    text,
+                                    &cleaned[link_end..]);
+                            } else {
+                                break;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                    cleaned
+                } else {
+                    line.to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+            // Fazla boşlukları temizle
+            .trim()
+            .to_string()
+    }
+
     fn parse_response(&self, response: &str) -> Result<CalorieInfo> {
         let mut calories = 0.0;
         let mut description = String::new();
 
         for line in response.lines() {
-            if line.starts_with("Kalori:") {
-                let calorie_str = line
+            let trimmed = line.trim();
+
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            if trimmed.starts_with("Kalori:") {
+                let calorie_str = trimmed
                     .replace("Kalori:", "")
                     .trim()
                     .replace("kcal", "")
@@ -197,12 +252,62 @@ impl OpenRouterService {
                 let cleaned = calorie_str
                     .chars()
                     .filter(|c| c.is_ascii_digit() || *c == '.' || *c == ',')
-                    .collect::<String>()
-                    .replace(',', ".");
+                    .collect::<String>();
 
-                calories = cleaned.parse::<f64>().unwrap_or(0.0);
-            } else if line.starts_with("Yemek:") || line.starts_with("Açıklama:") {
-                description.push_str(line.trim());
+                // Virgül ve nokta yönetimi:
+                // - Türkçe format: "1.250" (nokta binlik ayracı) -> "1250"
+                // - İngilizce format: "1,250" (virgül binlik ayracı) -> "1250"
+                // - Ondalık: "1.5" veya "1,5" -> "1.5"
+                let final_str = if cleaned.contains(',') && cleaned.contains('.') {
+                    // İkisi de varsa, son olanı ondalık ayracı olarak al
+                    let comma_pos = cleaned.rfind(',').unwrap_or(0);
+                    let dot_pos = cleaned.rfind('.').unwrap_or(0);
+                    if comma_pos > dot_pos {
+                        // Virgül sonra geliyorsa, virgül ondalık ayracı
+                        cleaned.replace('.', "").replace(',', ".")
+                    } else {
+                        // Nokta sonra geliyorsa, nokta ondalık ayracı
+                        cleaned.replace(',', "")
+                    }
+                } else if cleaned.contains(',') {
+                    // Sadece virgül varsa, binlik ayracı olarak kabul et ve kaldır
+                    // Ama eğer virgülden sonra 1-2 rakam varsa ondalık ayracıdır
+                    if let Some(comma_pos) = cleaned.find(',') {
+                        let after_comma = &cleaned[comma_pos + 1..];
+                        if after_comma.len() <= 2 && !after_comma.is_empty() {
+                            // Ondalık ayracı: "650,5" -> "650.5"
+                            cleaned.replace(',', ".")
+                        } else {
+                            // Binlik ayracı: "1,250" -> "1250"
+                            cleaned.replace(',', "")
+                        }
+                    } else {
+                        cleaned
+                    }
+                } else if cleaned.contains('.') {
+                    // Sadece nokta varsa, binlik ayracı olarak kabul et ve kaldır
+                    // Ama eğer noktadan sonra 1-2 rakam varsa ondalık ayracıdır
+                    if let Some(dot_pos) = cleaned.find('.') {
+                        let after_dot = &cleaned[dot_pos + 1..];
+                        if after_dot.len() <= 2 && !after_dot.is_empty() {
+                            // Ondalık ayracı: "650.5" -> "650.5"
+                            cleaned
+                        } else {
+                            // Binlik ayracı: "1.250" -> "1250"
+                            cleaned.replace('.', "")
+                        }
+                    } else {
+                        cleaned
+                    }
+                } else {
+                    cleaned
+                };
+
+                calories = final_str.parse::<f64>().unwrap_or(0.0);
+            } else {
+                // TÜM satırları description'a ekle (sadece Kalori: satırı hariç)
+                // Bu sayede Yemek:, Açıklama:, Porsiyon:, Sağlıklı mı: vb. tüm bilgiler korunur
+                description.push_str(trimmed);
                 description.push('\n');
             }
         }
@@ -210,14 +315,18 @@ impl OpenRouterService {
         if calories == 0.0 {
             // Eğer parse edilemezse, tüm metni açıklama olarak al ve ortalama bir değer ver
             description = response.to_string();
-            log::warn!("Could not parse calories from response, using default");
+            log::warn!("⚠️ Could not parse calories from response, using default 400 kcal");
+            log::debug!("📄 Original AI response: {}", response);
             // Varsayılan orta büyüklük öğün kalorisi
             calories = 400.0;
         }
 
+        // Markdown ve özel karakterleri temizle
+        let clean_description = self.clean_markdown(&description);
+
         Ok(CalorieInfo {
             calories,
-            description: description.trim().to_string(),
+            description: clean_description,
         })
     }
 
@@ -288,7 +397,12 @@ impl OpenRouterService {
 
         let chat_response: ChatResponse = response.json().await?;
         log::info!("✅ Received nutrition advice successfully");
-        Ok(chat_response.choices[0].message.content.clone())
+
+        // Markdown ve özel karakterleri temizle
+        let advice = &chat_response.choices[0].message.content;
+        let clean_advice = self.clean_markdown(advice);
+
+        Ok(clean_advice)
     }
 }
 
@@ -308,6 +422,7 @@ mod tests {
 
         assert_eq!(info.calories, 650.0);
         assert!(info.description.contains("Pizza"));
+        assert!(info.description.contains("Açıklama"));
     }
 
     #[test]
@@ -321,5 +436,129 @@ mod tests {
         let info = service.parse_response(response).unwrap();
 
         assert_eq!(info.calories, 1250.0);
+        assert!(info.description.contains("Menemen"));
+    }
+
+    #[test]
+    fn test_parse_response_with_decimal_comma() {
+        let service = OpenRouterService::new(
+            "test_key".to_string(),
+            "test_model".to_string(),
+        );
+
+        let response = "Kalori: 650,5\nYemek: Salata";
+        let info = service.parse_response(response).unwrap();
+
+        assert_eq!(info.calories, 650.5);
+    }
+
+    #[test]
+    fn test_parse_response_with_decimal_dot() {
+        let service = OpenRouterService::new(
+            "test_key".to_string(),
+            "test_model".to_string(),
+        );
+
+        let response = "Kalori: 650.5\nYemek: Salata";
+        let info = service.parse_response(response).unwrap();
+
+        assert_eq!(info.calories, 650.5);
+    }
+
+    #[test]
+    fn test_parse_response_turkish_format() {
+        let service = OpenRouterService::new(
+            "test_key".to_string(),
+            "test_model".to_string(),
+        );
+
+        // Türkçe format: 1.250 (binlik ayracı nokta)
+        let response = "Kalori: 1.250\nYemek: Köfte";
+        let info = service.parse_response(response).unwrap();
+
+        assert_eq!(info.calories, 1250.0);
+    }
+
+    #[test]
+    fn test_parse_response_with_all_fields() {
+        let service = OpenRouterService::new(
+            "test_key".to_string(),
+            "test_model".to_string(),
+        );
+
+        let response = "Yemek: Pizza Margherita\n\
+                        Kalori: 650\n\
+                        Porsiyon: Orta boy, 2 dilim\n\
+                        Sağlıklı mı: Orta düzeyde\n\
+                        Açıklama: İyi bir öğün";
+        let info = service.parse_response(response).unwrap();
+
+        assert_eq!(info.calories, 650.0);
+        // Tüm alanlar description'da olmalı
+        assert!(info.description.contains("Pizza"));
+        assert!(info.description.contains("Porsiyon"));
+        assert!(info.description.contains("Sağlıklı"));
+        assert!(info.description.contains("Açıklama"));
+        // Kalori satırı description'da olmamalı
+        assert!(!info.description.contains("Kalori: 650"));
+    }
+
+    #[test]
+    fn test_clean_markdown() {
+        let service = OpenRouterService::new(
+            "test_key".to_string(),
+            "test_model".to_string(),
+        );
+
+        // Markdown başlıkları
+        let text = "### Ana Başlık\n## Alt Başlık\n# Başlık";
+        let cleaned = service.clean_markdown(text);
+        assert!(!cleaned.contains("###"));
+        assert!(!cleaned.contains("##"));
+        assert!(!cleaned.contains("# "));
+
+        // Bold ve italic
+        let text = "**Kalın metin** ve __diğer kalın__";
+        let cleaned = service.clean_markdown(text);
+        assert!(!cleaned.contains("**"));
+        assert!(!cleaned.contains("__"));
+        assert!(cleaned.contains("Kalın metin"));
+
+        // Kod blokları
+        let text = "```rust\nlet x = 5;\n```";
+        let cleaned = service.clean_markdown(text);
+        assert!(!cleaned.contains("```"));
+
+        // Bağlantılar
+        let text = "Bu bir [link](https://example.com) örneği";
+        let cleaned = service.clean_markdown(text);
+        assert!(!cleaned.contains("]("));
+        assert!(cleaned.contains("link"));
+        assert!(!cleaned.contains("https://example.com"));
+    }
+
+    #[test]
+    fn test_parse_response_with_markdown() {
+        let service = OpenRouterService::new(
+            "test_key".to_string(),
+            "test_model".to_string(),
+        );
+
+        let response = "Yemek: **Pizza Margherita**\n\
+                        Kalori: 650\n\
+                        ### Beslenme Bilgisi\n\
+                        Açıklama: __Orta boy__ pizza, [Detay](https://example.com)";
+        let info = service.parse_response(response).unwrap();
+
+        assert_eq!(info.calories, 650.0);
+        // Markdown karakterleri temizlenmiş olmalı
+        assert!(!info.description.contains("**"));
+        assert!(!info.description.contains("###"));
+        assert!(!info.description.contains("__"));
+        assert!(!info.description.contains("]("));
+        // İçerik korunmuş olmalı
+        assert!(info.description.contains("Pizza"));
+        assert!(info.description.contains("Orta boy"));
+        assert!(info.description.contains("Detay"));
     }
 }

@@ -63,15 +63,9 @@ impl MessageHandler {
             return Ok(());
         }
 
-        let message_lower = message.to_lowercase();
+        let message_lower = message.trim().to_lowercase();
 
-        // Komut kontrolü
-        if message_lower.starts_with("/") || message_lower.starts_with("!") {
-            self.handle_command(from, &message_lower).await?;
-            return Ok(());
-        }
-
-        // Resim varsa kalori analizi yap
+        // Resim varsa öncelik ver (komutlardan önce)
         if has_media {
             if let Some(image_path) = media_path {
                 self.handle_food_image(from, &image_path).await?;
@@ -82,6 +76,11 @@ impl MessageHandler {
         // Su tüketimi kaydı
         if message_lower.contains("su") && (message_lower.contains("içtim") || message_lower.contains("ml")) {
             self.handle_water_log(from, message).await?;
+            return Ok(());
+        }
+
+        // Akıllı komut tespiti - slash olsun olmasın çalışır
+        if self.try_handle_smart_command(from, &message_lower).await? {
             return Ok(());
         }
 
@@ -209,28 +208,36 @@ impl MessageHandler {
         250 // varsayılan
     }
 
-    async fn handle_command(&self, from: &str, command: &str) -> Result<()> {
-        let cmd_parts: Vec<&str> = command.trim().split_whitespace().collect();
-        let main_cmd = cmd_parts.get(0).unwrap_or(&"");
+    /// Akıllı komut tespiti - slash olsun olmasın komutları tanır
+    /// Örnek: "rapor", "/rapor", "yardım", "yardim" hepsi çalışır
+    async fn try_handle_smart_command(&self, from: &str, message: &str) -> Result<bool> {
+        // Slash varsa kaldır
+        let clean_msg = message.trim_start_matches('/').trim_start_matches('!');
+        let parts: Vec<&str> = clean_msg.split_whitespace().collect();
+        let main_word = parts.get(0).unwrap_or(&"");
 
-        match *main_cmd {
-            "/rapor" | "/report" => {
+        // Komut eşleştirmeleri - Türkçe karakterleri normalize et
+        let matched = match *main_word {
+            // Rapor komutları
+            "rapor" | "report" | "özet" | "ozet" | "summary" => {
                 let today = Local::now().date_naive();
                 let stats = self.db.get_daily_stats(from, today).await?;
-
                 let report = crate::services::whatsapp::format_daily_report(
                     stats.total_calories,
                     stats.total_water_ml,
                     stats.meals_count,
                     stats.water_logs_count,
                 );
-
                 self.whatsapp.send_message(from, &report).await?;
+                true
             }
-            "/yardim" | "/help" => {
+            // Yardım komutları
+            "yardim" | "yardım" | "help" | "?" | "komutlar" | "commands" => {
                 self.send_help_message(from).await?;
+                true
             }
-            "/gecmis" | "/history" => {
+            // Geçmiş komutları
+            "gecmis" | "geçmiş" | "history" | "tarihçe" | "tarihce" => {
                 let meals = self.db.get_recent_meals(from, 5).await?;
                 let mut response = "📜 Son 5 Öğün:\n\n".to_string();
 
@@ -250,8 +257,10 @@ impl MessageHandler {
                 }
 
                 self.whatsapp.send_message(from, &response).await?;
+                true
             }
-            "/tavsiye" | "/advice" => {
+            // Tavsiye komutları
+            "tavsiye" | "öneri" | "oneri" | "advice" | "tip" | "tips" => {
                 let today = Local::now().date_naive();
                 let stats = self.db.get_daily_stats(from, today).await?;
 
@@ -270,24 +279,27 @@ impl MessageHandler {
                             .await?;
                     }
                 }
+                true
             }
-            "/ayarlar" | "/settings" => {
+            // Ayarlar komutları
+            "ayarlar" | "settings" | "ayar" | "setting" => {
                 self.handle_settings_command(from).await?;
+                true
             }
-            "/saat" | "/time" => {
-                self.handle_time_command(from, &cmd_parts).await?;
+            // Saat komutları
+            "saat" | "time" => {
+                self.handle_time_command(from, &parts).await?;
+                true
             }
-            "/timezone" | "/tz" => {
-                self.handle_timezone_command(from, &cmd_parts).await?;
+            // Timezone komutları
+            "timezone" | "tz" | "zamandilimi" => {
+                self.handle_timezone_command(from, &parts).await?;
+                true
             }
-            _ => {
-                self.whatsapp
-                    .send_message(from, "Bilinmeyen komut. /yardim yazarak komutları görebilirsin.")
-                    .await?;
-            }
-        }
+            _ => false,
+        };
 
-        Ok(())
+        Ok(matched)
     }
 
     async fn handle_settings_command(&self, from: &str) -> Result<()> {
@@ -310,13 +322,13 @@ impl MessageHandler {
              Akşam: {} {}\n\n\
              💧 Su Hatırlatma: {}\n\n\
              🌍 Zaman Dilimi: {}\n\n\
-             *Komutlar:*\n\
-             /saat kahvalti HH:MM - Kahvaltı saatini değiştir\n\
-             /saat ogle HH:MM - Öğle yemeği saatini değiştir\n\
-             /saat aksam HH:MM - Akşam yemeği saatini değiştir\n\
-             /timezone [IANA timezone] - Zaman dilimini değiştir\n\n\
-             Örnek: /saat kahvalti 09:00\n\
-             Örnek: /timezone America/New_York",
+             *Komutlar:* (slash opsiyonel)\n\
+             saat kahvalti HH:MM - Kahvaltı saatini değiştir\n\
+             saat ogle HH:MM - Öğle yemeği saatini değiştir\n\
+             saat aksam HH:MM - Akşam yemeği saatini değiştir\n\
+             timezone [IANA timezone] - Zaman dilimini değiştir\n\n\
+             Örnek: saat kahvalti 09:00\n\
+             Örnek: timezone America/New_York",
             breakfast_time, breakfast_status,
             lunch_time, lunch_status,
             dinner_time, dinner_status,
@@ -332,7 +344,7 @@ impl MessageHandler {
         if cmd_parts.len() < 3 {
             self.whatsapp.send_message(
                 from,
-                "❌ Kullanım: /saat [kahvalti|ogle|aksam] HH:MM\n\nÖrnek: /saat kahvalti 09:00"
+                "❌ Kullanım: saat [kahvalti|ogle|aksam] HH:MM\n\nÖrnek: saat kahvalti 09:00"
             ).await?;
             return Ok(());
         }
@@ -383,11 +395,11 @@ impl MessageHandler {
         if cmd_parts.len() < 2 {
             self.whatsapp.send_message(
                 from,
-                "❌ Kullanım: /timezone [IANA timezone]\n\n\
+                "❌ Kullanım: timezone [IANA timezone]\n\n\
                  Örnekler:\n\
-                 /timezone Europe/Istanbul\n\
-                 /timezone America/New_York\n\
-                 /timezone Asia/Tokyo\n\n\
+                 timezone Europe/Istanbul\n\
+                 timezone America/New_York\n\
+                 timezone Asia/Tokyo\n\n\
                  Zaman dilimlerinin listesi: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones"
             ).await?;
             return Ok(());
@@ -423,15 +435,18 @@ impl MessageHandler {
         let help = "📱 *Beslenme Takip Botu*\n\n\
                    *Kullanım:*\n\
                    🍽️ Yemek resmi gönder → Kalori analizi\n\
-                   💧 'X ml su içtim' yaz → Su kaydı\n\
-                   📊 /rapor → Günlük özet\n\
-                   📜 /gecmis → Son öğünler\n\
-                   💡 /tavsiye → AI beslenme tavsiyesi\n\
-                   ⚙️ /ayarlar → Ayarlarını görüntüle\n\
-                   🕐 /saat [öğün] [HH:MM] → Öğün saatini değiştir\n\
-                   🌍 /timezone [tz] → Zaman dilimini değiştir\n\
-                   ❓ /yardim → Bu mesaj\n\n\
-                   Otomatik hatırlatmalar:\n\
+                   💧 'X ml su içtim' yaz → Su kaydı\n\n\
+                   *Komutlar:* (slash '/' opsiyonel)\n\
+                   📊 rapor, özet → Günlük özet\n\
+                   📜 geçmiş, tarihçe → Son öğünler\n\
+                   💡 tavsiye, öneri → AI beslenme tavsiyesi\n\
+                   ⚙️ ayarlar → Ayarlarını görüntüle\n\
+                   🕐 saat [öğün] [HH:MM] → Öğün saatini değiştir\n\
+                   🌍 timezone [tz] → Zaman dilimini değiştir\n\
+                   ❓ yardım, ? → Bu mesaj\n\n\
+                   *İpucu:* Slash kullanmadan da yazabilirsiniz!\n\
+                   Örnek: 'rapor' veya '/rapor' ikisi de çalışır\n\n\
+                   *Otomatik hatırlatmalar:*\n\
                    • Kahvaltı, öğle, akşam (zaman dilimine göre)\n\
                    • 2 saatte bir su içme";
 
