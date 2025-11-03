@@ -71,6 +71,12 @@ impl MessageHandler {
             return Ok(());
         }
 
+        // Help mesajı komut butonları
+        if message_lower.starts_with("cmd_") {
+            self.handle_command_button(from, &message_lower).await?;
+            return Ok(());
+        }
+
         // Resim varsa öncelik ver (komutlardan önce)
         if has_media {
             if let Some(image_path) = media_path {
@@ -378,6 +384,98 @@ impl MessageHandler {
         self.whatsapp
             .send_message_with_buttons(from, &response, buttons)
             .await?;
+
+        Ok(())
+    }
+
+    async fn handle_command_button(&self, from: &str, button_id: &str) -> Result<()> {
+        match button_id {
+            "cmd_rapor" => {
+                // Günlük rapor göster
+                let today = self.get_user_today(from).await?;
+                let stats = self.db.get_daily_stats(from, today).await?;
+                let report = crate::services::whatsapp::format_daily_report(
+                    stats.total_calories,
+                    stats.total_water_ml,
+                    stats.meals_count,
+                    stats.water_logs_count,
+                );
+                self.whatsapp.send_message(from, &report).await?;
+            }
+            "cmd_tavsiye" => {
+                // AI tavsiye al
+                let today = self.get_user_today(from).await?;
+                let stats = self.db.get_daily_stats(from, today).await?;
+
+                // Kullanıcının su hedefini al
+                let user = self.db.get_user(from).await?;
+                let water_goal = user.and_then(|u| u.daily_water_goal).unwrap_or(2000);
+
+                match self
+                    .openai
+                    .get_nutrition_advice(
+                        stats.total_calories,
+                        stats.total_water_ml,
+                        water_goal,
+                        stats.meals_count
+                    )
+                    .await
+                {
+                    Ok(advice) => {
+                        self.whatsapp.send_message(from, &advice).await?;
+                    }
+                    Err(e) => {
+                        log::error!("❌ Failed to get nutrition advice: {:?}", e);
+                        log::error!("❌ Error details: {}", e);
+
+                        let error_msg = if e.to_string().contains("moderation") {
+                            "⚠️ AI hizmeti geçici olarak kullanılamıyor (içerik moderasyonu hatası). Lütfen daha sonra tekrar deneyin."
+                        } else if e.to_string().contains("Rate limit") {
+                            "⚠️ Çok fazla istek gönderildi. Lütfen birkaç dakika sonra tekrar deneyin."
+                        } else {
+                            "⚠️ Şu anda tavsiye alınamıyor. Lütfen daha sonra tekrar deneyin."
+                        };
+
+                        self.whatsapp
+                            .send_message(from, error_msg)
+                            .await?;
+                    }
+                }
+            }
+            "cmd_water" => {
+                // Su kayıt butonları göster
+                let today = self.get_user_today(from).await?;
+                let stats = self.db.get_daily_stats(from, today).await?;
+
+                // Kullanıcının su hedefini al
+                let user = self.db.get_user(from).await?;
+                let water_goal = user.and_then(|u| u.daily_water_goal).unwrap_or(2000);
+
+                let response = format!(
+                    "💧 *Su Kayıt*\n\n\
+                     Bugünkü toplam: {} ml ({:.1} litre)\n\
+                     Hedef: {} ml ({:.1} litre)\n\n\
+                     Hızlı kayıt için aşağıdaki butonları kullanın:",
+                    stats.total_water_ml,
+                    stats.total_water_ml as f64 / 1000.0,
+                    water_goal,
+                    water_goal as f64 / 1000.0
+                );
+
+                let buttons = vec![
+                    ("water_150".to_string(), "💧 150 ml".to_string()),
+                    ("water_250".to_string(), "💧 250 ml".to_string()),
+                    ("water_500".to_string(), "💧 500 ml".to_string()),
+                ];
+
+                self.whatsapp
+                    .send_message_with_buttons(from, &response, buttons)
+                    .await?;
+            }
+            _ => {
+                log::warn!("Unknown command button: {}", button_id);
+            }
+        }
 
         Ok(())
     }
@@ -838,9 +936,19 @@ impl MessageHandler {
                    Örnek: 'rapor' veya '/rapor' ikisi de çalışır\n\n\
                    *Otomatik hatırlatmalar:*\n\
                    • Kahvaltı, öğle, akşam (zaman dilimine göre)\n\
-                   • Su içme (ayarlanabilir, varsayılan 2 saat)";
+                   • Su içme (ayarlanabilir, varsayılan 2 saat)\n\n\
+                   👇 En sık kullanılan komutlar için aşağıdaki butonları kullanabilirsiniz:";
 
-        self.whatsapp.send_message(to, help).await?;
+        // En sık kullanılan 3 komutu buton olarak göster
+        let buttons = vec![
+            ("cmd_rapor".to_string(), "📊 Günlük Rapor".to_string()),
+            ("cmd_tavsiye".to_string(), "💡 AI Tavsiye".to_string()),
+            ("cmd_water".to_string(), "💧 Su Kaydet".to_string()),
+        ];
+
+        self.whatsapp
+            .send_message_with_buttons(to, help, buttons)
+            .await?;
         Ok(())
     }
 }
