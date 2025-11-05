@@ -430,4 +430,25 @@ impl Database {
 
         Ok(())
     }
+
+    /// Get count of images (meals with image_path) for today
+    pub async fn get_daily_image_count(&self, user_phone: &str, date: chrono::NaiveDate) -> Result<i64> {
+        let result = sqlx::query(
+            r#"
+            SELECT COUNT(*)
+            FROM meals
+            WHERE user_phone = $1
+                AND image_path IS NOT NULL
+                AND created_at >= $2::DATE
+                AND created_at < ($2::DATE + INTERVAL '1 day')
+            "#,
+        )
+        .bind(user_phone)
+        .bind(date)
+        .fetch_one(&self.pool)
+        .await?;
+
+        let count: i64 = result.get(0);
+        Ok(count)
+    }
 }

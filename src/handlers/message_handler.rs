@@ -277,6 +277,24 @@ impl MessageHandler {
     }
 
     async fn handle_food_image(&self, from: &str, image_path: &str) -> Result<()> {
+        // Günlük resim limiti kontrolü (max 20)
+        let today = self.get_user_today(from).await?;
+        let daily_image_count = self.db.get_daily_image_count(from, today).await?;
+
+        if daily_image_count >= 20 {
+            log::warn!("📸 User {} reached daily image limit: {}/20", from, daily_image_count);
+            self.whatsapp
+                .send_message(
+                    from,
+                    "⚠️ Günlük resim limitine ulaştınız (20/20).\n\n\
+                     Yarın tekrar resim gönderebilirsiniz.\n\
+                     Bugün için 'ogun [açıklama]' komutuyla text tabanlı kayıt yapabilirsiniz.\n\n\
+                     Örnek: ogun tavuk göğsü ve salata"
+                )
+                .await?;
+            return Ok(());
+        }
+
         match self.openai.analyze_food_image(image_path).await {
             Ok(calorie_info) => {
                 // Akıllı öğün tespiti
@@ -294,7 +312,6 @@ impl MessageHandler {
 
                 self.db.add_meal(&meal).await?;
 
-                let today = self.get_user_today(from).await?;
                 let stats = self.db.get_daily_stats(from, today).await?;
 
                 // Öğün tipine göre emoji seç
@@ -312,18 +329,23 @@ impl MessageHandler {
                     MealType::Snack => "Ara Öğün",
                 };
 
+                // Günlük resim sayısını tekrar al (yeni eklenen dahil)
+                let updated_image_count = self.db.get_daily_image_count(from, today).await?;
+
                 let summary = format!(
                     "✅ Kaydedildi!\n\n\
                      {} Öğün Tipi: {}\n\
                      🔥 Kalori: {:.0} kcal\n\
                      📝 {}\n\n\
-                     📊 Günlük toplam: {:.0} kcal ({} öğün)",
+                     📊 Günlük toplam: {:.0} kcal ({} öğün)\n\
+                     📸 Günlük resim: {}/20",
                     meal_emoji,
                     meal_type_name,
                     calorie_info.calories,
                     calorie_info.description,
                     stats.total_calories,
-                    stats.meals_count
+                    stats.meals_count,
+                    updated_image_count
                 );
 
                 self.whatsapp.send_message(from, &summary).await?;
