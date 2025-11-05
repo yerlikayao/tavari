@@ -1,8 +1,13 @@
 # WhatsApp Interactive Buttons - Future Implementation
 
-## Current Status
+## Current Status ⚠️
 
-WhatsApp interactive quick reply buttons are **currently disabled** because Bird.com API requires using **WhatsApp Template Messages** for button functionality.
+WhatsApp interactive quick reply buttons are **currently disabled** and **will not appear in messages** because Bird.com API requires using **WhatsApp Template Messages** for button functionality.
+
+**What this means for users:**
+- Buttons like "💧 150 ml", "💧 250 ml", "💧 500 ml" will NOT be visible in WhatsApp
+- Users must type commands manually (e.g., "su 250ml içtim" or just "su" for 200ml)
+- This is a limitation of the Bird.com API, not a bug
 
 ## Why Buttons Don't Work
 

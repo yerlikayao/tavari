@@ -86,7 +86,8 @@ impl MessageHandler {
         }
 
         // Su tüketimi kaydı
-        if message_lower.contains("su") && (message_lower.contains("içtim") || message_lower.contains("ml")) {
+        // "su" tek başına yazıldığında da otomatik 200ml kaydet
+        if message_lower.contains("su") && (message_lower.contains("içtim") || message_lower.contains("ml") || message_lower.trim() == "su") {
             self.handle_water_log(from, message).await?;
             return Ok(());
         }
@@ -532,7 +533,7 @@ impl MessageHandler {
     }
 
     fn parse_water_amount(&self, message: &str) -> i32 {
-        // Basit parsing - "250 ml", "1 bardak", "200ml" vb.
+        // Basit parsing - "250 ml", "1 bardak", "200ml", "1000 ml" vb.
         if message.contains("bardak") {
             return 250; // 1 bardak = ~250ml
         }
@@ -544,13 +545,13 @@ impl MessageHandler {
         let words: Vec<&str> = cleaned.split_whitespace().collect();
         for word in words {
             if let Ok(amount) = word.parse::<i32>() {
-                if amount > 0 && amount <= 2000 {
+                if amount > 0 && amount <= 5000 {  // Limit 5000ml'ye çıkarıldı
                     return amount;
                 }
             }
         }
 
-        250 // varsayılan
+        200 // varsayılan (kullanıcı sadece "su" yazarsa)
     }
 
     /// Akıllı komut tespiti - slash olsun olmasın komutları tanır
