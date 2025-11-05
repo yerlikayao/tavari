@@ -366,7 +366,10 @@ impl MessageHandler {
             "✅ {} ml su kaydedildi!\n\n\
              Bugünkü toplam: {} ml ({:.1} litre)\n\
              Hedef: {} ml ({:.1} litre)\n\n\
-             Hızlı kayıt için aşağıdaki butonları kullanabilirsiniz:",
+             💡 Hızlı kayıt için:\n\
+             • su 150ml içtim\n\
+             • su 250ml içtim\n\
+             • su 500ml içtim",
             amount,
             stats.total_water_ml,
             stats.total_water_ml as f64 / 1000.0,
@@ -374,16 +377,7 @@ impl MessageHandler {
             water_goal as f64 / 1000.0
         );
 
-        // Su kaydı sonrası tekrar butonlar göster
-        let buttons = vec![
-            ("water_150".to_string(), "💧 150 ml".to_string()),
-            ("water_250".to_string(), "💧 250 ml".to_string()),
-            ("water_500".to_string(), "💧 500 ml".to_string()),
-        ];
-
-        self.whatsapp
-            .send_message_with_buttons(from, &response, buttons)
-            .await?;
+        self.whatsapp.send_message(from, &response).await?;
 
         Ok(())
     }
@@ -443,7 +437,7 @@ impl MessageHandler {
                 }
             }
             "cmd_water" => {
-                // Su kayıt butonları göster
+                // Su kayıt mesajı göster
                 let today = self.get_user_today(from).await?;
                 let stats = self.db.get_daily_stats(from, today).await?;
 
@@ -455,22 +449,17 @@ impl MessageHandler {
                     "💧 *Su Kayıt*\n\n\
                      Bugünkü toplam: {} ml ({:.1} litre)\n\
                      Hedef: {} ml ({:.1} litre)\n\n\
-                     Hızlı kayıt için aşağıdaki butonları kullanın:",
+                     💡 Hızlı kayıt için:\n\
+                     • su 150ml içtim\n\
+                     • su 250ml içtim\n\
+                     • su 500ml içtim",
                     stats.total_water_ml,
                     stats.total_water_ml as f64 / 1000.0,
                     water_goal,
                     water_goal as f64 / 1000.0
                 );
 
-                let buttons = vec![
-                    ("water_150".to_string(), "💧 150 ml".to_string()),
-                    ("water_250".to_string(), "💧 250 ml".to_string()),
-                    ("water_500".to_string(), "💧 500 ml".to_string()),
-                ];
-
-                self.whatsapp
-                    .send_message_with_buttons(from, &response, buttons)
-                    .await?;
+                self.whatsapp.send_message(from, &response).await?;
             }
             _ => {
                 log::warn!("Unknown command button: {}", button_id);
@@ -504,7 +493,10 @@ impl MessageHandler {
             "💧 {} ml su kaydedildi!\n\n\
              Bugünkü toplam: {} ml ({:.1} litre)\n\
              Hedef: {} ml ({:.1} litre)\n\n\
-             Hızlı kayıt için aşağıdaki butonları kullanabilirsiniz:",
+             💡 Hızlı kayıt için:\n\
+             • su 150ml içtim\n\
+             • su 250ml içtim\n\
+             • su 500ml içtim",
             amount,
             stats.total_water_ml,
             stats.total_water_ml as f64 / 1000.0,
@@ -512,16 +504,7 @@ impl MessageHandler {
             water_goal as f64 / 1000.0
         );
 
-        // Su kaydı sonrası hızlı butonlar ekle
-        let buttons = vec![
-            ("water_150".to_string(), "💧 150 ml".to_string()),
-            ("water_250".to_string(), "💧 250 ml".to_string()),
-            ("water_500".to_string(), "💧 500 ml".to_string()),
-        ];
-
-        self.whatsapp
-            .send_message_with_buttons(from, &response, buttons)
-            .await?;
+        self.whatsapp.send_message(from, &response).await?;
 
         Ok(())
     }
@@ -919,8 +902,7 @@ impl MessageHandler {
                    *Kullanım:*\n\
                    🍽️ Yemek resmi gönder → Kalori analizi\n\
                    📝 'ogun [açıklama]' yaz → Text ile öğün kaydı\n\
-                   💧 'X ml su içtim' yaz → Su kaydı\n\
-                   💧 Butonlarla hızlı su kaydı (150ml, 250ml, 500ml)\n\n\
+                   💧 'X ml su içtim' yaz → Su kaydı\n\n\
                    *Komutlar:* (slash '/' opsiyonel)\n\
                    📊 rapor, özet → Günlük özet\n\
                    📜 geçmiş, tarihçe → Son öğünler\n\
@@ -937,18 +919,12 @@ impl MessageHandler {
                    *Otomatik hatırlatmalar:*\n\
                    • Kahvaltı, öğle, akşam (zaman dilimine göre)\n\
                    • Su içme (ayarlanabilir, varsayılan 2 saat)\n\n\
-                   👇 En sık kullanılan komutlar için aşağıdaki butonları kullanabilirsiniz:";
+                   💡 *En Sık Kullanılan Komutlar:*\n\
+                   • rapor - Günlük özet\n\
+                   • tavsiye - AI tavsiyesi\n\
+                   • su 250ml içtim - Su kaydı";
 
-        // En sık kullanılan 3 komutu buton olarak göster
-        let buttons = vec![
-            ("cmd_rapor".to_string(), "📊 Günlük Rapor".to_string()),
-            ("cmd_tavsiye".to_string(), "💡 AI Tavsiye".to_string()),
-            ("cmd_water".to_string(), "💧 Su Kaydet".to_string()),
-        ];
-
-        self.whatsapp
-            .send_message_with_buttons(to, help, buttons)
-            .await?;
+        self.whatsapp.send_message(to, help).await?;
         Ok(())
     }
 }

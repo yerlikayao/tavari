@@ -29,6 +29,7 @@ struct Contact {
 
 #[derive(Serialize)]
 #[serde(untagged)]
+#[allow(dead_code)]  // Interactive variant reserved for future WhatsApp Template Messages
 enum Body {
     Text {
         #[serde(rename = "type")]
@@ -98,6 +99,9 @@ impl BirdComClient {
     }
 
     /// Send a message with quick reply buttons (max 3 buttons)
+    /// NOTE: Currently disabled - Bird.com requires WhatsApp Template Messages for buttons
+    /// Keep this code for future template implementation
+    #[allow(dead_code)]
     pub async fn send_message_with_buttons(
         &self,
         to: &str,
