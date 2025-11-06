@@ -571,6 +571,9 @@ impl MessageHandler {
 
         let water_interval = user.water_reminder_interval.unwrap_or(120);
         let water_goal = user.daily_water_goal.unwrap_or(2000);
+        let calorie_goal = user.daily_calorie_goal.unwrap_or(2000);
+        let silent_start = user.silent_hours_start.as_deref().unwrap_or("23:00");
+        let silent_end = user.silent_hours_end.as_deref().unwrap_or("07:00");
 
         let message = format!(
             "⚙️ *Ayarlarınız*\n\n\
@@ -578,31 +581,37 @@ impl MessageHandler {
              Kahvaltı: {} {}\n\
              Öğle: {} {}\n\
              Akşam: {} {}\n\n\
-             💧 *Su Ayarları:*\n\
-             Hatırlatma: {}\n\
-             Hatırlatma Aralığı: {} dakika ({} saat)\n\
-             Günlük Hedef: {} ml ({:.1} litre)\n\n\
+             🎯 *Hedefler:*\n\
+             Kalori: {} kcal/gün\n\
+             Su: {} ml/gün ({:.1} litre)\n\n\
+             💧 *Su Hatırlatma:*\n\
+             Durum: {}\n\
+             Aralık: {} dakika ({} saat)\n\n\
+             🌙 *Sessiz Saatler:*\n\
+             {} - {} (hatırlatma yok)\n\n\
              🌍 Zaman Dilimi: {}\n\n\
-             *Komutlar:* (slash opsiyonel)\n\
-             saat kahvalti HH:MM - Kahvaltı saatini değiştir\n\
-             saat ogle HH:MM - Öğle yemeği saatini değiştir\n\
-             saat aksam HH:MM - Akşam yemeği saatini değiştir\n\
-             timezone [IANA timezone] - Zaman dilimini değiştir\n\
-             suaraligi [dakika] - Su hatırlatma aralığını değiştir\n\
-             suhedefi [ml] - Günlük su hedefini değiştir\n\n\
-             Örnekler:\n\
-             saat kahvalti 09:00\n\
-             timezone America/New_York\n\
-             suaraligi 90 (90 dakikada bir hatırlat)\n\
-             suhedefi 2500 (2.5 litre hedef)",
+             *Değiştirme Komutları:*\n\
+             kalorihedefi [kcal] - Kalori hedefi (500-5000)\n\
+             suhedefi [ml] - Su hedefi (500-10000)\n\
+             sessiz [start] [end] - Sessiz saatler\n\
+             saat [öğün] [HH:MM] - Öğün saati\n\
+             suaraligi [dakika] - Su hatırlatma aralığı\n\
+             timezone [tz] - Zaman dilimi\n\n\
+             *Örnekler:*\n\
+             kalorihedefi 2500\n\
+             sessiz 22:00 08:00\n\
+             saat kahvalti 09:00",
             breakfast_time, breakfast_status,
             lunch_time, lunch_status,
             dinner_time, dinner_status,
+            calorie_goal,
+            water_goal,
+            water_goal as f64 / 1000.0,
             water_status,
             water_interval,
             water_interval / 60,
-            water_goal,
-            water_goal as f64 / 1000.0,
+            silent_start,
+            silent_end,
             user.timezone
         );
 
@@ -792,26 +801,35 @@ impl MessageHandler {
                    🍽️ Yemek resmi gönder → Kalori analizi\n\
                    📝 'ogun [açıklama]' yaz → Text ile öğün kaydı\n\
                    💧 'X ml su içtim' yaz → Su kaydı\n\n\
-                   *Komutlar:* (slash '/' opsiyonel)\n\
-                   📊 rapor, özet → Günlük özet\n\
+                   *Temel Komutlar:* (slash '/' opsiyonel)\n\
+                   📊 rapor, özet → Günlük özet (progress bar'lı)\n\
                    📜 geçmiş, tarihçe → Son öğünler\n\
-                   💡 tavsiye, öneri → AI beslenme tavsiyesi (bugünkü verilere göre)\n\
-                   🍽️ ogun [açıklama] → Text ile yemek kaydet (örn: ogun tavuk ve salata)\n\
-                   ⚙️ ayarlar → Ayarlarını görüntüle\n\
+                   💡 tavsiye, öneri → AI beslenme tavsiyesi\n\
+                   🍽️ ogun [açıklama] → Text ile yemek kaydet\n\n\
+                   *Favori Yemekler:* ⭐\n\
+                   🍽️ favori → Favori listeni görüntüle\n\
+                   ➕ favori ekle [isim] [açıklama] → Favori ekle\n\
+                   🗑️ favori sil [isim] → Favori sil\n\
+                   ⚡ fav1, fav2 → Favoriyi hızlıca kaydet\n\n\
+                   *Hedef Ayarları:* 🎯\n\
+                   🔥 kalorihedefi [kcal] → Kalori hedefini ayarla (500-5000)\n\
+                   💧 suhedefi [ml] → Su hedefini ayarla (500-10000)\n\
+                   🌙 sessiz [başlangıç] [bitiş] → Sessiz saatler (örn: sessiz 23:00 07:00)\n\n\
+                   *Diğer Ayarlar:* ⚙️\n\
                    🕐 saat [öğün] [HH:MM] → Öğün saatini değiştir\n\
                    🌍 timezone [tz] → Zaman dilimini değiştir\n\
-                   💧 suhedefi [ml] → Günlük su hedefinizi değiştir\n\
-                   ⏱️ suaraligi [dakika] → Su hatırlatma aralığını değiştir\n\
+                   ⏱️ suaraligi [dakika] → Su hatırlatma aralığı\n\
+                   ⚙️ ayarlar → Tüm ayarlarını görüntüle\n\
                    ❓ yardım, ? → Bu mesaj\n\n\
-                   *İpucu:* Slash kullanmadan da yazabilirsiniz!\n\
-                   Örnek: 'rapor' veya '/rapor' ikisi de çalışır\n\n\
-                   *Otomatik hatırlatmalar:*\n\
-                   • Kahvaltı, öğle, akşam (zaman dilimine göre)\n\
-                   • Su içme (ayarlanabilir, varsayılan 2 saat)\n\n\
-                   💡 *En Sık Kullanılan Komutlar:*\n\
-                   • rapor - Günlük özet\n\
-                   • tavsiye - AI tavsiyesi\n\
-                   • su 250ml içtim - Su kaydı";
+                   *Otomatik Hatırlatmalar:*\n\
+                   • Kahvaltı, öğle, akşam (kişisel saatlerine göre)\n\
+                   • Su içme (ayarlanabilir aralık)\n\
+                   • Günlük özet (22:00)\n\
+                   • Sessiz saatlerde hatırlatma yok 🌙\n\n\
+                   💡 *En Kullanışlı Özellikler:*\n\
+                   • favori ekle fav1 Tavuklu pilav → Sonra sadece 'fav1' yaz!\n\
+                   • rapor → Günlük progress bar'ını gör\n\
+                   • kalorihedefi 2500 → Kişisel hedefini ayarla";
 
         self.whatsapp.send_message(to, help).await?;
         Ok(())
