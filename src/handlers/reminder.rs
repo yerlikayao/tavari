@@ -2,6 +2,7 @@ use anyhow::Result;
 use std::sync::Arc;
 use tokio_cron_scheduler::{Job, JobScheduler};
 
+use crate::models::{ConversationDirection, MessageType};
 use crate::services::{Database, WhatsAppService};
 
 pub struct ReminderService {
@@ -89,6 +90,16 @@ impl ReminderService {
                                 if &current_time == breakfast_time {
                                     let msg = "☀️ *Kahvaltı zamanı!*\n\nYedikten sonra fotoğrafını gönder 📸";
                                     let _ = whatsapp.send_message(&user.phone_number, msg).await;
+
+                                    // Log reminder
+                                    let _ = db.log_conversation(
+                                        &user.phone_number,
+                                        ConversationDirection::Outgoing,
+                                        MessageType::Reminder,
+                                        msg,
+                                        Some(serde_json::json!({"reminder_type": "breakfast", "time": breakfast_time})),
+                                    ).await;
+
                                     log::info!("📤 Sent breakfast reminder to {} ({})", user.phone_number, user.timezone);
                                 }
                             }
@@ -101,6 +112,16 @@ impl ReminderService {
                                 if &current_time == lunch_time {
                                     let msg = "🌞 *Öğle yemeği zamanı!*\n\nYedikten sonra fotoğrafını gönder 📸";
                                     let _ = whatsapp.send_message(&user.phone_number, msg).await;
+
+                                    // Log reminder
+                                    let _ = db.log_conversation(
+                                        &user.phone_number,
+                                        ConversationDirection::Outgoing,
+                                        MessageType::Reminder,
+                                        msg,
+                                        Some(serde_json::json!({"reminder_type": "lunch", "time": lunch_time})),
+                                    ).await;
+
                                     log::info!("📤 Sent lunch reminder to {} ({})", user.phone_number, user.timezone);
                                 }
                             }
@@ -113,6 +134,16 @@ impl ReminderService {
                                 if &current_time == dinner_time {
                                     let msg = "🌙 *Akşam yemeği zamanı!*\n\nYedikten sonra fotoğrafını gönder 📸";
                                     let _ = whatsapp.send_message(&user.phone_number, msg).await;
+
+                                    // Log reminder
+                                    let _ = db.log_conversation(
+                                        &user.phone_number,
+                                        ConversationDirection::Outgoing,
+                                        MessageType::Reminder,
+                                        msg,
+                                        Some(serde_json::json!({"reminder_type": "dinner", "time": dinner_time})),
+                                    ).await;
+
                                     log::info!("📤 Sent dinner reminder to {} ({})", user.phone_number, user.timezone);
                                 }
                             }
@@ -174,6 +205,16 @@ impl ReminderService {
                             // Su içme saatleri: 8,10,12,14,16,18,20,22
                             if [8, 10, 12, 14, 16, 18, 20, 22].contains(&current_hour) {
                                 let _ = whatsapp.send_message(&user.phone_number, message).await;
+
+                                // Log water reminder
+                                let _ = db.log_conversation(
+                                    &user.phone_number,
+                                    ConversationDirection::Outgoing,
+                                    MessageType::Reminder,
+                                    message,
+                                    Some(serde_json::json!({"reminder_type": "water", "hour": current_hour})),
+                                ).await;
+
                                 log::info!("📤 Sent water reminder to {} at {}:00 ({})", user.phone_number, current_hour, user.timezone);
                             }
                         } else {
@@ -235,6 +276,21 @@ impl ReminderService {
 
                                 let message = format!("🌙 *Günlük Özet*\n\n{}", report);
                                 let _ = whatsapp.send_message(&user.phone_number, &message).await;
+
+                                // Log daily summary
+                                let _ = db.log_conversation(
+                                    &user.phone_number,
+                                    ConversationDirection::Outgoing,
+                                    MessageType::Reminder,
+                                    &message,
+                                    Some(serde_json::json!({
+                                        "reminder_type": "daily_summary",
+                                        "calories": stats.total_calories,
+                                        "water_ml": stats.total_water_ml,
+                                        "meals_count": stats.meals_count
+                                    })),
+                                ).await;
+
                                 log::info!("📤 Sent daily summary to {} at 22:00 ({})", user.phone_number, user.timezone);
                             }
                         }

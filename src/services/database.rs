@@ -2,7 +2,7 @@ use anyhow::Result;
 use chrono::NaiveDate;
 use sqlx::{postgres::PgPoolOptions, PgPool, Row};
 
-use crate::models::{DailyStats, Meal, MealType, User, WaterLog};
+use crate::models::{Conversation, ConversationDirection, DailyStats, Meal, MealType, MessageType, User, WaterLog};
 
 pub struct Database {
     pool: PgPool,
@@ -85,6 +85,32 @@ impl Database {
                 created_at TIMESTAMPTZ NOT NULL,
                 UNIQUE(user_phone, name)
             )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS conversations (
+                id SERIAL PRIMARY KEY,
+                user_phone TEXT NOT NULL REFERENCES users(phone_number),
+                direction TEXT NOT NULL,  -- 'incoming' or 'outgoing'
+                message_type TEXT NOT NULL,  -- 'text', 'image', 'command', 'response', 'reminder', 'error'
+                content TEXT NOT NULL,
+                metadata JSONB,  -- Extra info: command type, error details, image path, etc.
+                created_at TIMESTAMPTZ NOT NULL
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        // Create index for faster queries by user and date
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_conversations_user_date
+            ON conversations(user_phone, created_at DESC)
             "#,
         )
         .execute(&self.pool)
@@ -329,7 +355,7 @@ impl Database {
             WITH meals_stats AS (
                 SELECT
                     COALESCE(SUM(calories), 0.0) as total_calories,
-                    COUNT(*) as meals_count
+                    COUNT(*)::BIGINT as meals_count
                 FROM meals
                 WHERE user_phone = $1
                     AND created_at >= $2::DATE
@@ -337,8 +363,8 @@ impl Database {
             ),
             water_stats AS (
                 SELECT
-                    COALESCE(SUM(amount_ml), 0) as total_water,
-                    COUNT(*) as water_count
+                    COALESCE(SUM(amount_ml)::BIGINT, 0) as total_water,
+                    COUNT(*)::BIGINT as water_count
                 FROM water_logs
                 WHERE user_phone = $1
                     AND created_at >= $2::DATE
@@ -358,9 +384,9 @@ impl Database {
         .await?;
 
         let total_calories: f64 = result.get(0);
-        let meals_count: i64 = result.get(1);
-        let total_water_ml: i64 = result.get(2);
-        let water_logs_count: i64 = result.get(3);
+        let meals_count: i64 = result.get::<i64, _>(1);
+        let total_water_ml: i64 = result.get::<i64, _>(2);
+        let water_logs_count: i64 = result.get::<i64, _>(3);
 
         Ok(DailyStats {
             user_phone: user_phone.to_string(),
@@ -370,6 +396,34 @@ impl Database {
             meals_count,
             water_logs_count,
         })
+    }
+
+    /// Get meal types logged today (for sequential meal validation)
+    pub async fn get_todays_meal_types(&self, user_phone: &str, date: NaiveDate) -> Result<Vec<MealType>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT DISTINCT meal_type
+            FROM meals
+            WHERE user_phone = $1
+                AND created_at >= $2::DATE
+                AND created_at < ($2::DATE + INTERVAL '1 day')
+            ORDER BY meal_type
+            "#,
+        )
+        .bind(user_phone)
+        .bind(date)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let meal_types = rows
+            .into_iter()
+            .filter_map(|row| {
+                let meal_type_str: String = row.get(0);
+                MealType::from_string(&meal_type_str)
+            })
+            .collect();
+
+        Ok(meal_types)
     }
 
     pub async fn get_recent_meals(&self, user_phone: &str, limit: i32) -> Result<Vec<Meal>> {
@@ -507,7 +561,7 @@ impl Database {
     pub async fn get_daily_image_count(&self, user_phone: &str, date: chrono::NaiveDate) -> Result<i64> {
         let result = sqlx::query(
             r#"
-            SELECT COUNT(*)
+            SELECT COUNT(*)::BIGINT
             FROM meals
             WHERE user_phone = $1
                 AND image_path IS NOT NULL
@@ -520,7 +574,7 @@ impl Database {
         .fetch_one(&self.pool)
         .await?;
 
-        let count: i64 = result.get(0);
+        let count: i64 = result.get::<i64, _>(0);
         Ok(count)
     }
 
@@ -547,8 +601,8 @@ impl Database {
         .fetch_one(&self.pool)
         .await?;
 
-        let id: i64 = result.get(0);
-        Ok(id)
+        let id: i32 = result.get(0);
+        Ok(id as i64)
     }
 
     /// Get all favorite meals for a user
@@ -655,5 +709,109 @@ impl Database {
         .await?;
 
         Ok(())
+    }
+
+    // ============================================================
+    // Conversation Logging Functions
+    // ============================================================
+
+    /// Log a conversation message (incoming from user or outgoing from bot)
+    pub async fn log_conversation(
+        &self,
+        user_phone: &str,
+        direction: ConversationDirection,
+        message_type: MessageType,
+        content: &str,
+        metadata: Option<serde_json::Value>,
+    ) -> Result<i64> {
+        let direction_str = direction.to_string();
+        let message_type_str = serde_json::to_string(&message_type)?.trim_matches('"').to_string();
+
+        let result = sqlx::query(
+            r#"
+            INSERT INTO conversations (user_phone, direction, message_type, content, metadata, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            RETURNING id
+            "#,
+        )
+        .bind(user_phone)
+        .bind(direction_str)
+        .bind(message_type_str)
+        .bind(content)
+        .bind(metadata)
+        .bind(chrono::Utc::now())
+        .fetch_one(&self.pool)
+        .await?;
+
+        let id: i32 = result.get(0);
+        Ok(id as i64)
+    }
+
+    /// Get recent conversation history for a user
+    pub async fn get_conversation_history(
+        &self,
+        user_phone: &str,
+        limit: i32,
+    ) -> Result<Vec<Conversation>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT id, user_phone, direction, message_type, content, metadata, created_at
+            FROM conversations
+            WHERE user_phone = $1
+            ORDER BY created_at DESC
+            LIMIT $2
+            "#,
+        )
+        .bind(user_phone)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let conversations = rows
+            .into_iter()
+            .map(|row| {
+                let id_i32: i32 = row.get(0);
+                let direction_str: String = row.get(2);
+                let message_type_str: String = row.get(3);
+
+                let direction = match direction_str.as_str() {
+                    "incoming" => ConversationDirection::Incoming,
+                    "outgoing" => ConversationDirection::Outgoing,
+                    _ => ConversationDirection::Incoming,
+                };
+
+                let message_type: MessageType = serde_json::from_str(&format!("\"{}\"", message_type_str))
+                    .unwrap_or(MessageType::Text);
+
+                Conversation {
+                    id: Some(id_i32 as i64),
+                    user_phone: row.get(1),
+                    direction,
+                    message_type,
+                    content: row.get(4),
+                    metadata: row.get(5),
+                    created_at: row.get(6),
+                }
+            })
+            .collect();
+
+        Ok(conversations)
+    }
+
+    /// Get conversation count for a user
+    pub async fn get_conversation_count(&self, user_phone: &str) -> Result<i64> {
+        let result = sqlx::query(
+            r#"
+            SELECT COUNT(*)::BIGINT
+            FROM conversations
+            WHERE user_phone = $1
+            "#,
+        )
+        .bind(user_phone)
+        .fetch_one(&self.pool)
+        .await?;
+
+        let count: i64 = result.get::<i64, _>(0);
+        Ok(count)
     }
 }

@@ -90,3 +90,41 @@ pub struct FavoriteMeal {
     pub calories: f64,
     pub created_at: DateTime<Utc>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Conversation {
+    pub id: Option<i64>,
+    pub user_phone: String,
+    pub direction: ConversationDirection,
+    pub message_type: MessageType,
+    pub content: String,
+    pub metadata: Option<serde_json::Value>,  // Extra metadata as JSON
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ConversationDirection {
+    Incoming,  // User → Bot
+    Outgoing,  // Bot → User
+}
+
+impl ConversationDirection {
+    pub fn to_string(&self) -> String {
+        match self {
+            ConversationDirection::Incoming => "incoming".to_string(),
+            ConversationDirection::Outgoing => "outgoing".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MessageType {
+    Text,       // Regular text message
+    Image,      // Image with food
+    Command,    // User command (rapor, ayarlar, etc.)
+    Response,   // Bot response to command
+    Reminder,   // Automatic reminder
+    Error,      // Error message
+}

@@ -1,4 +1,4 @@
-use crate::models::User;
+use crate::models::{ConversationDirection, MessageType, User};
 use crate::services::{Database, WhatsAppService};
 use anyhow::Result;
 use std::sync::Arc;
@@ -49,6 +49,15 @@ Beslenme takibini kişiselleştirmek için öğün saatlerini öğrenmeliyim.\n\
 
         self.whatsapp.send_message(&user.phone_number, welcome_msg).await?;
 
+        // Log outgoing message
+        let _ = self.db.log_conversation(
+            &user.phone_number,
+            ConversationDirection::Outgoing,
+            MessageType::Response,
+            welcome_msg,
+            Some(serde_json::json!({"onboarding_step": "welcome"})),
+        ).await;
+
         // İlk adım: kahvaltı saati
         self.db.update_onboarding_step(&user.phone_number, Some("breakfast_time".to_string())).await?;
 
@@ -63,11 +72,30 @@ Beslenme takibini kişiselleştirmek için öğün saatlerini öğrenmeliyim.\n\
             let msg = format!("✅ Kahvaltı: {}\n\n*Öğle yemeği saatin?*\nÖrnek: 13:00", time);
 
             self.whatsapp.send_message(&user.phone_number, &msg).await?;
+
+            // Log outgoing message
+            let _ = self.db.log_conversation(
+                &user.phone_number,
+                ConversationDirection::Outgoing,
+                MessageType::Response,
+                &msg,
+                Some(serde_json::json!({"onboarding_step": "breakfast_time_saved", "time": time})),
+            ).await;
+
             self.db.update_onboarding_step(&user.phone_number, Some("lunch_time".to_string())).await?;
         } else {
             let msg = "❌ Geçersiz format\n\nHH:MM olmalı\nÖrnek: 09:00";
 
             self.whatsapp.send_message(&user.phone_number, msg).await?;
+
+            // Log error message
+            let _ = self.db.log_conversation(
+                &user.phone_number,
+                ConversationDirection::Outgoing,
+                MessageType::Error,
+                msg,
+                Some(serde_json::json!({"onboarding_step": "breakfast_time_invalid", "input": time})),
+            ).await;
         }
         Ok(())
     }
@@ -79,11 +107,30 @@ Beslenme takibini kişiselleştirmek için öğün saatlerini öğrenmeliyim.\n\
             let msg = format!("✅ Öğle: {}\n\n*Akşam yemeği saatin?*\nÖrnek: 19:00", time);
 
             self.whatsapp.send_message(&user.phone_number, &msg).await?;
+
+            // Log outgoing message
+            let _ = self.db.log_conversation(
+                &user.phone_number,
+                ConversationDirection::Outgoing,
+                MessageType::Response,
+                &msg,
+                Some(serde_json::json!({"onboarding_step": "lunch_time_saved", "time": time})),
+            ).await;
+
             self.db.update_onboarding_step(&user.phone_number, Some("dinner_time".to_string())).await?;
         } else {
             let msg = "❌ Geçersiz format\n\nHH:MM olmalı\nÖrnek: 09:00";
 
             self.whatsapp.send_message(&user.phone_number, msg).await?;
+
+            // Log error message
+            let _ = self.db.log_conversation(
+                &user.phone_number,
+                ConversationDirection::Outgoing,
+                MessageType::Error,
+                msg,
+                Some(serde_json::json!({"onboarding_step": "lunch_time_invalid", "input": time})),
+            ).await;
         }
         Ok(())
     }
@@ -97,6 +144,16 @@ Beslenme takibini kişiselleştirmek için öğün saatlerini öğrenmeliyim.\n\
             let msg = "❌ Geçersiz format\n\nHH:MM olmalı\nÖrnek: 09:00";
 
             self.whatsapp.send_message(&user.phone_number, msg).await?;
+
+            // Log error message
+            let _ = self.db.log_conversation(
+                &user.phone_number,
+                ConversationDirection::Outgoing,
+                MessageType::Error,
+                msg,
+                Some(serde_json::json!({"onboarding_step": "dinner_time_invalid", "input": time})),
+            ).await;
+
             return Ok(());
         }
 
@@ -118,6 +175,20 @@ Beslenme takibini kişiselleştirmek için öğün saatlerini öğrenmeliyim.\n\
             updated_user.dinner_time.as_deref().unwrap_or(""));
 
         self.whatsapp.send_message(&user.phone_number, &completion_msg).await?;
+
+        // Log completion message
+        let _ = self.db.log_conversation(
+            &user.phone_number,
+            ConversationDirection::Outgoing,
+            MessageType::Response,
+            &completion_msg,
+            Some(serde_json::json!({
+                "onboarding_step": "completed",
+                "breakfast_time": updated_user.breakfast_time,
+                "lunch_time": updated_user.lunch_time,
+                "dinner_time": updated_user.dinner_time
+            })),
+        ).await;
 
         log::info!("✅ Onboarding completed for user: {}", user.phone_number);
         Ok(())

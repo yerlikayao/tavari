@@ -2,7 +2,7 @@ use anyhow::Result;
 use chrono::{Utc, Timelike};
 use std::sync::Arc;
 
-use crate::models::{Meal, MealType, User, WaterLog};
+use crate::models::{ConversationDirection, Meal, MealType, MessageType, User, WaterLog};
 use crate::services::{Database, OpenRouterService, WhatsAppService};
 use crate::handlers::OnboardingHandler;
 
@@ -25,6 +25,29 @@ impl MessageHandler {
         }
     }
 
+    /// Helper function to send message and log it
+    async fn send_and_log(
+        &self,
+        to: &str,
+        message: &str,
+        message_type: MessageType,
+        metadata: Option<serde_json::Value>,
+    ) -> Result<()> {
+        // Send message
+        self.whatsapp.send_message(to, message).await?;
+
+        // Log to database
+        let _ = self.db.log_conversation(
+            to,
+            ConversationDirection::Outgoing,
+            message_type,
+            message,
+            metadata,
+        ).await;
+
+        Ok(())
+    }
+
     pub async fn handle_message(
         &self,
         from: &str,
@@ -38,6 +61,24 @@ impl MessageHandler {
 
         // Kullanıcıyı kontrol et veya oluştur
         self.ensure_user_exists(from).await?;
+
+        // Log incoming message to database
+        let message_type = if has_media { MessageType::Image } else { MessageType::Text };
+        let metadata = if has_media {
+            Some(serde_json::json!({
+                "has_media": true,
+                "media_path": media_path.clone()
+            }))
+        } else {
+            None
+        };
+        let _ = self.db.log_conversation(
+            from,
+            ConversationDirection::Incoming,
+            message_type,
+            message,
+            metadata,
+        ).await;
 
         // Kullanıcı bilgilerini al
         let user = self.db.get_user(from).await?.ok_or_else(|| anyhow::anyhow!("User not found"))?;
@@ -110,8 +151,17 @@ impl MessageHandler {
     }
 
     /// Optimized: Detect meal type without fetching user (user already available)
-    fn detect_meal_type_with_user(&self, user: &User, current_time: chrono::NaiveTime) -> Result<MealType> {
+    async fn detect_meal_type_with_user(&self, user: &User, current_time: chrono::NaiveTime, today: chrono::NaiveDate) -> Result<MealType> {
         log::debug!("🕐 Detecting meal type for user {} at {} (timezone: {})", user.phone_number, current_time, user.timezone);
+
+        // Bugün kaydedilmiş öğünleri kontrol et
+        let todays_meals = self.db.get_todays_meal_types(&user.phone_number, today).await?;
+
+        let has_breakfast = todays_meals.iter().any(|m| matches!(m, MealType::Breakfast));
+        let has_lunch = todays_meals.iter().any(|m| matches!(m, MealType::Lunch));
+        let has_dinner = todays_meals.iter().any(|m| matches!(m, MealType::Dinner));
+
+        log::debug!("📊 Today's meals - Breakfast: {}, Lunch: {}, Dinner: {}", has_breakfast, has_lunch, has_dinner);
 
         // Kullanıcının öğün saatlerini parse et
         let breakfast_time = user.breakfast_time.as_ref()
@@ -129,26 +179,29 @@ impl MessageHandler {
         // Tolerans: ±2 saat
         let tolerance = chrono::Duration::hours(2);
 
-        // Kahvaltı zamanı mı? (Kahvaltı saati ± 2 saat)
-        if Self::is_within_time_range(current_time, breakfast, tolerance) {
+        // Sıralı öğün kontrolü: Kahvaltı -> Öğle -> Akşam
+        // Kullanıcı önce kahvaltı yapmalı, sonra öğle, sonra akşam
+
+        // Eğer kahvaltı kayıtlı değilse ve kahvaltı saatindeyse
+        if !has_breakfast && Self::is_within_time_range(current_time, breakfast, tolerance) {
             log::info!("🍳 Detected meal type: Breakfast (current: {}, target: {})", current_time, breakfast);
             return Ok(MealType::Breakfast);
         }
 
-        // Öğle yemeği zamanı mı?
-        if Self::is_within_time_range(current_time, lunch, tolerance) {
+        // Eğer kahvaltı kayıtlı ama öğle kayıtlı değilse ve öğle saatindeyse
+        if has_breakfast && !has_lunch && Self::is_within_time_range(current_time, lunch, tolerance) {
             log::info!("🍱 Detected meal type: Lunch (current: {}, target: {})", current_time, lunch);
             return Ok(MealType::Lunch);
         }
 
-        // Akşam yemeği zamanı mı?
-        if Self::is_within_time_range(current_time, dinner, tolerance) {
+        // Eğer kahvaltı ve öğle kayıtlı ama akşam kayıtlı değilse ve akşam saatindeyse
+        if has_breakfast && has_lunch && !has_dinner && Self::is_within_time_range(current_time, dinner, tolerance) {
             log::info!("🍽️ Detected meal type: Dinner (current: {}, target: {})", current_time, dinner);
             return Ok(MealType::Dinner);
         }
 
-        // Hiçbir ana öğün zamanına denk gelmiyorsa ara öğün
-        log::info!("🍪 Detected meal type: Snack (current: {}, not matching any main meal)", current_time);
+        // Eğer sıralı öğün kuralına uymuyorsa ara öğün olarak kaydet
+        log::info!("🍪 Detected meal type: Snack (sequential rule or time doesn't match main meals) at {}", current_time);
         Ok(MealType::Snack)
     }
 
@@ -176,9 +229,10 @@ impl MessageHandler {
                 let user = self.db.get_user(from).await?.ok_or_else(|| anyhow::anyhow!("User not found"))?;
                 let user_tz: chrono_tz::Tz = user.timezone.parse().unwrap_or(chrono_tz::Europe::Istanbul);
                 let now = Utc::now().with_timezone(&user_tz);
+                let today = now.date_naive();
 
                 // Akıllı öğün tespiti (user'ı tekrar fetch etmeden)
-                let meal_type = self.detect_meal_type_with_user(&user, now.time())?;
+                let meal_type = self.detect_meal_type_with_user(&user, now.time(), today).await?;
 
                 let meal = Meal {
                     id: None,
@@ -256,7 +310,7 @@ impl MessageHandler {
         match self.openai.analyze_food_image(image_path).await {
             Ok(calorie_info) => {
                 // Akıllı öğün tespiti (user'ı tekrar fetch etmeden)
-                let meal_type = self.detect_meal_type_with_user(&user, now.time())?;
+                let meal_type = self.detect_meal_type_with_user(&user, now.time(), today).await?;
 
                 let meal = Meal {
                     id: None,
@@ -1006,7 +1060,8 @@ impl MessageHandler {
             let user_tz: chrono_tz::Tz = user.timezone.parse().unwrap_or(chrono_tz::Europe::Istanbul);
             let now_user = Utc::now().with_timezone(&user_tz);
             let current_time = now_user.time();
-            let meal_type = self.detect_meal_type_with_user(&user, current_time)?;
+            let today = now_user.date_naive();
+            let meal_type = self.detect_meal_type_with_user(&user, current_time, today).await?;
 
             // Log the meal
             let meal = crate::models::Meal {
