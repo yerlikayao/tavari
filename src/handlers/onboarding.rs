@@ -117,6 +117,10 @@ Lütfen HH:MM formatında girin.\n\
             return Ok(());
         }
 
+        // Fetch updated user with all meal times from database
+        let updated_user = self.db.get_user(&user.phone_number).await?
+            .ok_or_else(|| anyhow::anyhow!("User not found after onboarding completion"))?;
+
         let completion_msg = format!("🎉 *Onboarding Tamamlandı!*\n\n\
 ✅ Kahvaltı: {}\n\
 ✅ Öğle: {}\n\
@@ -125,7 +129,10 @@ Artık beslenme takibinizi başlatabilirsiniz!\n\n\
 📸 *Yemek fotoğrafı gönderin* - Kalori analizi\n\
 💧 *'250 ml su içtim'* - Su takibi\n\
 📊 *'/rapor'* - Günlük rapor\n\n\
-İyi beslenmeler! 🥗", user.breakfast_time.as_deref().unwrap_or(""), user.lunch_time.as_deref().unwrap_or(""), time);
+İyi beslenmeler! 🥗",
+            updated_user.breakfast_time.as_deref().unwrap_or(""),
+            updated_user.lunch_time.as_deref().unwrap_or(""),
+            updated_user.dinner_time.as_deref().unwrap_or(""));
 
         self.whatsapp.send_message(&user.phone_number, &completion_msg).await?;
 

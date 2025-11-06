@@ -368,18 +368,31 @@ impl Database {
     }
 
     pub async fn update_meal_time(&self, phone_number: &str, meal_type: &str, time: &str) -> Result<()> {
-        let column = match meal_type {
-            "breakfast" => "breakfast_time",
-            "lunch" => "lunch_time",
-            "dinner" => "dinner_time",
+        // Use separate queries instead of dynamic column names to prevent SQL injection
+        match meal_type {
+            "breakfast" => {
+                sqlx::query("UPDATE users SET breakfast_time = $1 WHERE phone_number = $2")
+                    .bind(time)
+                    .bind(phone_number)
+                    .execute(&self.pool)
+                    .await?;
+            }
+            "lunch" => {
+                sqlx::query("UPDATE users SET lunch_time = $1 WHERE phone_number = $2")
+                    .bind(time)
+                    .bind(phone_number)
+                    .execute(&self.pool)
+                    .await?;
+            }
+            "dinner" => {
+                sqlx::query("UPDATE users SET dinner_time = $1 WHERE phone_number = $2")
+                    .bind(time)
+                    .bind(phone_number)
+                    .execute(&self.pool)
+                    .await?;
+            }
             _ => return Err(anyhow::anyhow!("Invalid meal type")),
-        };
-
-        sqlx::query(&format!("UPDATE users SET {} = $1 WHERE phone_number = $2", column))
-            .bind(time)
-            .bind(phone_number)
-            .execute(&self.pool)
-            .await?;
+        }
 
         Ok(())
     }

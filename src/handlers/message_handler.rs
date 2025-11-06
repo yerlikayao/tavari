@@ -46,18 +46,8 @@ impl MessageHandler {
         if !user.onboarding_completed {
             log::info!("👤 User {} in onboarding phase (step: {:?})", from, user.onboarding_step);
 
-            // İlk mesajda onboarding başlamasın, sadece bilgilendirme mesajı gönder
-            if user.onboarding_step.is_none() {
-                let info_msg = "👋 *Beslenme Takip Botuna Hoş Geldiniz!*\n\n\
-                               Öncelikli olarak öğünlerinizin saatini girmelisiniz.\n\n\
-                               *Herhangi bir mesaj yazarak onboarding'i başlatabilirsiniz.*\n\
-                               (Örneğin: 'merhaba' veya 'başla')";
-
-                self.whatsapp.send_message(from, info_msg).await?;
-                self.db.update_onboarding_step(from, Some("ready_to_start".to_string())).await?;
-                return Ok(());
-            }
-
+            // İlk mesajda otomatik olarak onboarding'i başlat
+            // Kullanıcıdan "tekrar mesaj gönder" dememek için direkt başlatıyoruz
             let onboarding_handler = OnboardingHandler::new(self.db.clone(), self.whatsapp.clone());
             onboarding_handler.handle_step(&user, message).await?;
             return Ok(());
@@ -757,11 +747,12 @@ impl MessageHandler {
         let meal_type = cmd_parts[1].to_lowercase();
         let time = cmd_parts[2];
 
-        // Validate time format (HH:MM)
-        if !time.contains(':') || time.len() != 5 {
+        // Validate time format (HH:MM) with proper hour/minute range checks
+        if !self.validate_time_format(time) {
             self.whatsapp.send_message(
                 from,
-                "❌ Geçersiz saat formatı. HH:MM formatında olmalı (örn: 09:00)"
+                "❌ Geçersiz saat formatı. HH:MM formatında olmalı (örn: 09:00)\n\
+                Saat: 00-23, Dakika: 00-59"
             ).await?;
             return Ok(());
         }
@@ -949,5 +940,21 @@ impl MessageHandler {
 
         self.whatsapp.send_message(to, help).await?;
         Ok(())
+    }
+
+    fn validate_time_format(&self, time: &str) -> bool {
+        // HH:MM formatını kontrol et
+        let parts: Vec<&str> = time.split(':').collect();
+        if parts.len() != 2 {
+            return false;
+        }
+
+        let hour = parts[0].parse::<u32>();
+        let minute = parts[1].parse::<u32>();
+
+        match (hour, minute) {
+            (Ok(h), Ok(m)) => h < 24 && m < 60,
+            _ => false,
+        }
     }
 }

@@ -191,6 +191,12 @@ impl OpenRouterService {
         let chat_response: ChatResponse = serde_json::from_str(&response_text)?;
         log::debug!("✅ Parsed OpenRouter response successfully");
 
+        // Validate response has choices
+        if chat_response.choices.is_empty() {
+            log::error!("❌ OpenRouter returned empty choices array for image analysis");
+            anyhow::bail!("OpenRouter returned empty response");
+        }
+
         let content = &chat_response.choices[0].message.content;
         log::info!("💬 OpenRouter response content: {}", content);
 
@@ -444,6 +450,12 @@ impl OpenRouterService {
 
         let chat_response: ChatResponse = serde_json::from_str(&response_text)?;
         log::debug!("✅ Parsed OpenRouter response successfully");
+
+        // Validate response has choices
+        if chat_response.choices.is_empty() {
+            log::error!("❌ OpenRouter returned empty choices array for text meal analysis");
+            anyhow::bail!("OpenRouter returned empty response");
+        }
 
         let content = &chat_response.choices[0].message.content;
         log::info!("💬 OpenRouter text meal analysis: {}", content);

@@ -252,16 +252,9 @@ pub mod server {
 
         // Verify signature if both secret and signature are provided
         if !webhook_secret.is_empty() && !signature.is_empty() {
-            // Serialize payload for signature verification
-            let payload_json = match serde_json::to_string(&payload) {
-                Ok(json) => json,
-                Err(e) => {
-                    log::error!("❌ Failed to serialize payload: {}", e);
-                    return StatusCode::BAD_REQUEST;
-                }
-            };
-
-            if !verify_webhook_signature(&payload_json, signature, &webhook_secret) {
+            // Use raw body for signature verification (not re-serialized JSON)
+            // Re-serialization can change whitespace/key ordering and break HMAC verification
+            if !verify_webhook_signature(&body, signature, &webhook_secret) {
                 log::error!("❌ Webhook signature verification failed");
                 return StatusCode::UNAUTHORIZED;
             }
