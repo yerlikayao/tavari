@@ -195,14 +195,6 @@ impl MessageHandler {
                 let today = now.date_naive();
                 let stats = self.db.get_daily_stats(from, today).await?;
 
-                // Öğün tipine göre emoji seç
-                let meal_emoji = match meal_type {
-                    MealType::Breakfast => "🍳",
-                    MealType::Lunch => "🍱",
-                    MealType::Dinner => "🍽️",
-                    MealType::Snack => "🍪",
-                };
-
                 let meal_type_name = match meal_type {
                     MealType::Breakfast => "Kahvaltı",
                     MealType::Lunch => "Öğle Yemeği",
@@ -211,15 +203,13 @@ impl MessageHandler {
                 };
 
                 let summary = format!(
-                    "✅ Kaydedildi!\n\n\
-                     {} Öğün Tipi: {}\n\
-                     🔥 Kalori: {:.0} kcal\n\
-                     📝 {}\n\n\
-                     📊 Günlük toplam: {:.0} kcal ({} öğün)",
-                    meal_emoji,
+                    "✅ *{} Kaydedildi!*\n\n\
+                     📝 {}\n\
+                     🔥 {:.0} kcal\n\n\
+                     📊 Bugün: {:.0} kcal ({} öğün)",
                     meal_type_name,
-                    calorie_info.calories,
                     calorie_info.description,
+                    calorie_info.calories,
                     stats.total_calories,
                     stats.meals_count
                 );
@@ -231,7 +221,7 @@ impl MessageHandler {
                 self.whatsapp
                     .send_message(
                         from,
-                        "❌ Yemek analiz edilemedi. Lütfen daha detaylı açıklama yazın veya resim gönderin.",
+                        "❌ Analiz yapılamadı.\nLütfen daha detaylı açıkla veya fotoğraf gönder.",
                     )
                     .await?;
             }
@@ -255,10 +245,9 @@ impl MessageHandler {
             self.whatsapp
                 .send_message(
                     from,
-                    "⚠️ Günlük resim limitine ulaştınız (20/20).\n\n\
-                     Yarın tekrar resim gönderebilirsiniz.\n\
-                     Bugün için 'ogun [açıklama]' komutuyla text tabanlı kayıt yapabilirsiniz.\n\n\
-                     Örnek: ogun tavuk göğsü ve salata"
+                    "⚠️ *Günlük resim limiti* (20/20)\n\n\
+                     Yarın tekrar fotoğraf gönderebilirsin.\n\
+                     Bugün için: ogun tavuk göğsü ve salata"
                 )
                 .await?;
             return Ok(());
@@ -283,14 +272,6 @@ impl MessageHandler {
 
                 let stats = self.db.get_daily_stats(from, today).await?;
 
-                // Öğün tipine göre emoji seç
-                let meal_emoji = match meal_type {
-                    MealType::Breakfast => "🍳",
-                    MealType::Lunch => "🍱",
-                    MealType::Dinner => "🍽️",
-                    MealType::Snack => "🍪",
-                };
-
                 let meal_type_name = match meal_type {
                     MealType::Breakfast => "Kahvaltı",
                     MealType::Lunch => "Öğle Yemeği",
@@ -302,16 +283,14 @@ impl MessageHandler {
                 let updated_image_count = self.db.get_daily_image_count(from, today).await?;
 
                 let summary = format!(
-                    "✅ Kaydedildi!\n\n\
-                     {} Öğün Tipi: {}\n\
-                     🔥 Kalori: {:.0} kcal\n\
-                     📝 {}\n\n\
-                     📊 Günlük toplam: {:.0} kcal ({} öğün)\n\
-                     📸 Günlük resim: {}/20",
-                    meal_emoji,
+                    "✅ *{} Kaydedildi!*\n\n\
+                     📝 {}\n\
+                     🔥 {:.0} kcal\n\n\
+                     📊 Bugün: {:.0} kcal ({} öğün)\n\
+                     📸 Resim: {}/20",
                     meal_type_name,
-                    calorie_info.calories,
                     calorie_info.description,
+                    calorie_info.calories,
                     stats.total_calories,
                     stats.meals_count,
                     updated_image_count
@@ -322,7 +301,7 @@ impl MessageHandler {
             Err(e) => {
                 log::error!("Image analysis error: {}", e);
                 self.whatsapp
-                    .send_message(from, "❌ Resim analiz edilemedi. Lütfen tekrar dene.")
+                    .send_message(from, "❌ Resim analiz edilemedi. Tekrar dene.")
                     .await?;
             }
         }
@@ -353,18 +332,14 @@ impl MessageHandler {
         let water_goal = user.daily_water_goal.unwrap_or(2000);
 
         let response = format!(
-            "💧 {} ml su kaydedildi!\n\n\
-             Bugünkü toplam: {} ml ({:.1} litre)\n\
-             Hedef: {} ml ({:.1} litre)\n\n\
-             💡 Hızlı kayıt için:\n\
-             • su 150ml içtim\n\
-             • su 250ml içtim\n\
-             • su 500ml içtim",
+            "💧 *{} ml kaydedildi!*\n\n\
+             Bugün: {} ml / {} ml\n\
+             Kalan: {} ml\n\n\
+             💡 Hızlıca kaydet: 250 ml su içtim",
             amount,
             stats.total_water_ml,
-            stats.total_water_ml as f64 / 1000.0,
             water_goal,
-            water_goal as f64 / 1000.0
+            water_goal - stats.total_water_ml as i32
         );
 
         self.whatsapp.send_message(from, &response).await?;
@@ -429,24 +404,23 @@ impl MessageHandler {
             // Geçmiş komutları
             "gecmis" | "geçmiş" | "history" | "tarihçe" | "tarihce" => {
                 let meals = self.db.get_recent_meals(from, 5).await?;
-                let mut response = "📜 Son 5 Öğün:\n\n".to_string();
-
-                for (i, meal) in meals.iter().enumerate() {
-                    response.push_str(&format!(
-                        "{}. {} - {:.0} kcal\n   {}\n   {}\n\n",
-                        i + 1,
-                        meal.meal_type.to_string(),
-                        meal.calories,
-                        meal.description,
-                        meal.created_at.format("%d.%m.%Y %H:%M")
-                    ));
-                }
 
                 if meals.is_empty() {
-                    response = "Henüz kayıtlı öğün yok.".to_string();
+                    self.whatsapp.send_message(from, "📜 Henüz kayıtlı öğün yok.").await?;
+                } else {
+                    let mut response = "📜 *Son 5 Öğün*\n\n".to_string();
+                    for (i, meal) in meals.iter().enumerate() {
+                        response.push_str(&format!(
+                            "{}. {} • {:.0} kcal\n{}\n{}\n\n",
+                            i + 1,
+                            meal.meal_type.to_string(),
+                            meal.calories,
+                            meal.description,
+                            meal.created_at.format("%d.%m %H:%M")
+                        ));
+                    }
+                    self.whatsapp.send_message(from, &response).await?;
                 }
-
-                self.whatsapp.send_message(from, &response).await?;
                 true
             }
             // Tavsiye komutları
@@ -577,30 +551,26 @@ impl MessageHandler {
 
         let message = format!(
             "⚙️ *Ayarlarınız*\n\n\
-             🕐 *Öğün Saatleri:*\n\
+             🕐 *Öğün Saatleri*\n\
              Kahvaltı: {} {}\n\
              Öğle: {} {}\n\
              Akşam: {} {}\n\n\
-             🎯 *Hedefler:*\n\
-             Kalori: {} kcal/gün\n\
-             Su: {} ml/gün ({:.1} litre)\n\n\
-             💧 *Su Hatırlatma:*\n\
-             Durum: {}\n\
-             Aralık: {} dakika ({} saat)\n\n\
-             🌙 *Sessiz Saatler:*\n\
-             {} - {} (hatırlatma yok)\n\n\
-             🌍 Zaman Dilimi: {}\n\n\
-             *Değiştirme Komutları:*\n\
-             kalorihedefi [kcal] - Kalori hedefi (500-5000)\n\
-             suhedefi [ml] - Su hedefi (500-10000)\n\
-             sessiz [start] [end] - Sessiz saatler\n\
-             saat [öğün] [HH:MM] - Öğün saati\n\
-             suaraligi [dakika] - Su hatırlatma aralığı\n\
-             timezone [tz] - Zaman dilimi\n\n\
-             *Örnekler:*\n\
+             🎯 *Günlük Hedefler*\n\
+             {} kcal kalori\n\
+             {} ml su ({:.1}L)\n\n\
+             💧 *Su Hatırlatma*\n\
+             {} Her {} dakika\n\n\
+             🌙 *Sessiz Saatler*\n\
+             {} - {}\n\n\
+             🌍 *Zaman Dilimi*\n\
+             {}\n\n\
+             *Değiştirmek için:*\n\
              kalorihedefi 2500\n\
-             sessiz 22:00 08:00\n\
-             saat kahvalti 09:00",
+             suhedefi 3000\n\
+             sessiz 23:00 07:00\n\
+             saat kahvalti 09:00\n\
+             suaraligi 120\n\
+             timezone Europe/Istanbul",
             breakfast_time, breakfast_status,
             lunch_time, lunch_status,
             dinner_time, dinner_status,
@@ -609,7 +579,6 @@ impl MessageHandler {
             water_goal as f64 / 1000.0,
             water_status,
             water_interval,
-            water_interval / 60,
             silent_start,
             silent_end,
             user.timezone
@@ -623,7 +592,7 @@ impl MessageHandler {
         if cmd_parts.len() < 3 {
             self.whatsapp.send_message(
                 from,
-                "❌ Kullanım: saat [kahvalti|ogle|aksam] HH:MM\n\nÖrnek: saat kahvalti 09:00"
+                "❌ Kullanım: saat [kahvalti|ogle|aksam] HH:MM\nÖrnek: saat kahvalti 09:00"
             ).await?;
             return Ok(());
         }
@@ -635,8 +604,7 @@ impl MessageHandler {
         if !self.validate_time_format(time) {
             self.whatsapp.send_message(
                 from,
-                "❌ Geçersiz saat formatı. HH:MM formatında olmalı (örn: 09:00)\n\
-                Saat: 00-23, Dakika: 00-59"
+                "❌ Geçersiz saat formatı\nHH:MM olmalı (örn: 09:00, 13:30)"
             ).await?;
             return Ok(());
         }
@@ -675,12 +643,11 @@ impl MessageHandler {
         if cmd_parts.len() < 2 {
             self.whatsapp.send_message(
                 from,
-                "❌ Kullanım: timezone [IANA timezone]\n\n\
+                "❌ Kullanım: timezone [zaman dilimi]\n\n\
                  Örnekler:\n\
                  timezone Europe/Istanbul\n\
                  timezone America/New_York\n\
-                 timezone Asia/Tokyo\n\n\
-                 Zaman dilimlerinin listesi: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones"
+                 timezone Asia/Tokyo"
             ).await?;
             return Ok(());
         }
@@ -701,9 +668,7 @@ impl MessageHandler {
             Err(_) => {
                 self.whatsapp.send_message(
                     from,
-                    &format!("❌ Geçersiz zaman dilimi: {}\n\n\
-                             IANA timezone formatında olmalı (örn: Europe/Istanbul)\n\
-                             Liste: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones", timezone)
+                    &format!("❌ Geçersiz zaman dilimi: {}\n\nÖrnek: Europe/Istanbul", timezone)
                 ).await?;
             }
         }
@@ -715,11 +680,7 @@ impl MessageHandler {
         if cmd_parts.len() < 2 {
             self.whatsapp.send_message(
                 from,
-                "❌ Kullanım: suaraligi [dakika]\n\n\
-                 Örnekler:\n\
-                 suaraligi 60 (1 saatte bir)\n\
-                 suaraligi 90 (1.5 saatte bir)\n\
-                 suaraligi 120 (2 saatte bir)"
+                "❌ Kullanım: suaraligi [dakika]\nÖrnek: suaraligi 120"
             ).await?;
             return Ok(());
         }
@@ -757,11 +718,7 @@ impl MessageHandler {
         if cmd_parts.len() < 2 {
             self.whatsapp.send_message(
                 from,
-                "❌ Kullanım: suhedefi [ml]\n\n\
-                 Örnekler:\n\
-                 suhedefi 2000 (2 litre)\n\
-                 suhedefi 2500 (2.5 litre)\n\
-                 suhedefi 3000 (3 litre)"
+                "❌ Kullanım: suhedefi [ml]\nÖrnek: suhedefi 2500"
             ).await?;
             return Ok(());
         }
@@ -797,39 +754,29 @@ impl MessageHandler {
 
     async fn send_help_message(&self, to: &str) -> Result<()> {
         let help = "📱 *Beslenme Takip Botu*\n\n\
-                   *Kullanım:*\n\
-                   🍽️ Yemek resmi gönder → Kalori analizi\n\
-                   📝 'ogun [açıklama]' yaz → Text ile öğün kaydı\n\
-                   💧 'X ml su içtim' yaz → Su kaydı\n\n\
-                   *Temel Komutlar:* (slash '/' opsiyonel)\n\
-                   📊 rapor, özet → Günlük özet (progress bar'lı)\n\
-                   📜 geçmiş, tarihçe → Son öğünler\n\
-                   💡 tavsiye, öneri → AI beslenme tavsiyesi\n\
-                   🍽️ ogun [açıklama] → Text ile yemek kaydet\n\n\
-                   *Favori Yemekler:* ⭐\n\
-                   🍽️ favori → Favori listeni görüntüle\n\
-                   ➕ favori ekle [isim] [açıklama] → Favori ekle\n\
-                   🗑️ favori sil [isim] → Favori sil\n\
-                   ⚡ fav1, fav2 → Favoriyi hızlıca kaydet\n\n\
-                   *Hedef Ayarları:* 🎯\n\
-                   🔥 kalorihedefi [kcal] → Kalori hedefini ayarla (500-5000)\n\
-                   💧 suhedefi [ml] → Su hedefini ayarla (500-10000)\n\
-                   🌙 sessiz [başlangıç] [bitiş] → Sessiz saatler (örn: sessiz 23:00 07:00)\n\n\
-                   *Diğer Ayarlar:* ⚙️\n\
-                   🕐 saat [öğün] [HH:MM] → Öğün saatini değiştir\n\
-                   🌍 timezone [tz] → Zaman dilimini değiştir\n\
-                   ⏱️ suaraligi [dakika] → Su hatırlatma aralığı\n\
-                   ⚙️ ayarlar → Tüm ayarlarını görüntüle\n\
-                   ❓ yardım, ? → Bu mesaj\n\n\
-                   *Otomatik Hatırlatmalar:*\n\
-                   • Kahvaltı, öğle, akşam (kişisel saatlerine göre)\n\
-                   • Su içme (ayarlanabilir aralık)\n\
-                   • Günlük özet (22:00)\n\
-                   • Sessiz saatlerde hatırlatma yok 🌙\n\n\
-                   💡 *En Kullanışlı Özellikler:*\n\
-                   • favori ekle fav1 Tavuklu pilav → Sonra sadece 'fav1' yaz!\n\
-                   • rapor → Günlük progress bar'ını gör\n\
-                   • kalorihedefi 2500 → Kişisel hedefini ayarla";
+                   *🍽️ Nasıl Kullanılır?*\n\
+                   • Yemek fotoğrafı gönder\n\
+                   • ogun [açıklama] - Text ile kaydet\n\
+                   • 250 ml su içtim - Su takibi\n\n\
+                   *📊 Ana Komutlar*\n\
+                   rapor - Günlük özet (progress bar)\n\
+                   geçmiş - Son 5 öğün\n\
+                   tavsiye - AI beslenme önerisi\n\
+                   ayarlar - Tüm ayarlar\n\n\
+                   *⭐ Favori Yemekler*\n\
+                   favori - Liste görüntüle\n\
+                   favori ekle fav1 Tavuklu pilav\n\
+                   favori sil fav1\n\
+                   fav1 - Hızlı kayıt\n\n\
+                   *🎯 Hedefler*\n\
+                   kalorihedefi 2500\n\
+                   suhedefi 3000\n\
+                   sessiz 23:00 07:00\n\n\
+                   *⚙️ Ayarlar*\n\
+                   saat kahvalti 09:00\n\
+                   suaraligi 120\n\
+                   timezone Europe/Istanbul\n\n\
+                   *💡 İpucu:* Komutlarda '/' kullanmana gerek yok!";
 
         self.whatsapp.send_message(to, help).await?;
         Ok(())
@@ -943,12 +890,11 @@ impl MessageHandler {
                 self.whatsapp.send_message(
                     from,
                     "⭐ *Favori Yemekler*\n\n\
-                     Henüz favori yemeğiniz yok.\n\n\
-                     *Ekleme:*\n\
-                     `favori ekle [isim] [açıklama]`\n\
-                     Örnek: favori ekle fav1 Tavuklu pilav\n\n\
-                     *Kullanım:*\n\
-                     Eklediğiniz favorileri `fav1`, `fav2` gibi kısayollarla kullanabilirsiniz."
+                     Henüz favori yok.\n\n\
+                     *Ekle:*\n\
+                     favori ekle fav1 Tavuklu pilav\n\n\
+                     *Kullan:*\n\
+                     Sadece 'fav1' yaz!"
                 ).await?;
                 return Ok(());
             }
@@ -956,11 +902,11 @@ impl MessageHandler {
             let mut response = "⭐ *Favori Yemekleriniz*\n\n".to_string();
             for fav in favorites.iter() {
                 response.push_str(&format!(
-                    "• `{}` - {} ({:.0} kcal)\n",
-                    fav.name, fav.description, fav.calories
+                    "• {} • {:.0} kcal\n   {}\n",
+                    fav.name, fav.calories, fav.description
                 ));
             }
-            response.push_str("\n*Kullanım:*\nMesaj olarak favori adını yazın (örn: `fav1`)");
+            response.push_str("\n💡 Kaydet: Sadece favori adını yaz");
 
             self.whatsapp.send_message(from, &response).await?;
             return Ok(());
@@ -1011,11 +957,11 @@ impl MessageHandler {
                 self.whatsapp.send_message(
                     from,
                     &format!(
-                        "✅ Favori eklendi!\n\n\
-                         • `{}` - {}\n\
-                         • Kalori: {:.0} kcal\n\n\
-                         Artık sadece `{}` yazarak bu yemeği kaydedebilirsiniz!",
-                        name, analyzed_description, calories, name
+                        "✅ *Favori eklendi!*\n\n\
+                         {} • {:.0} kcal\n\
+                         {}\n\n\
+                         💡 Kaydet: Sadece '{}' yaz",
+                        name, calories, analyzed_description, name
                     )
                 ).await?;
             }
@@ -1032,7 +978,7 @@ impl MessageHandler {
                 self.db.delete_favorite_meal(from, &name).await?;
                 self.whatsapp.send_message(
                     from,
-                    &format!("✅ `{}` favorilerden silindi.", name)
+                    &format!("✅ '{}' favorilerden silindi.", name)
                 ).await?;
             }
             _ => {
@@ -1078,9 +1024,9 @@ impl MessageHandler {
             self.whatsapp.send_message(
                 from,
                 &format!(
-                    "✅ {} kaydedildi!\n\n\
-                     • {}\n\
-                     • Kalori: {:.0} kcal",
+                    "✅ *{} kaydedildi!*\n\n\
+                     {}\n\
+                     🔥 {:.0} kcal",
                     meal_type.to_string(),
                     fav.description,
                     fav.calories
@@ -1090,9 +1036,7 @@ impl MessageHandler {
             self.whatsapp.send_message(
                 from,
                 &format!(
-                    "❌ `{}` isimli favori bulunamadı.\n\n\
-                     Favori eklemek için:\n\
-                     `favori ekle {} [açıklama]`",
+                    "❌ '{}' bulunamadı\n\nEklemek için:\nfavori ekle {} [açıklama]",
                     name, name
                 )
             ).await?;

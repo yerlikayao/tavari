@@ -87,7 +87,7 @@ impl ReminderService {
                             if let Some(ref breakfast_time) = user.breakfast_time {
                                 log::debug!("🍳 Checking breakfast for {}: current={}, target={}", user.phone_number, current_time, breakfast_time);
                                 if &current_time == breakfast_time {
-                                    let msg = "☀️ Günaydın! Kahvaltı zamanı!\n\nKahvaltını yaptıktan sonra fotoğrafını göndermeyi unutma 📸";
+                                    let msg = "☀️ *Kahvaltı zamanı!*\n\nYedikten sonra fotoğrafını gönder 📸";
                                     let _ = whatsapp.send_message(&user.phone_number, msg).await;
                                     log::info!("📤 Sent breakfast reminder to {} ({})", user.phone_number, user.timezone);
                                 }
@@ -99,7 +99,7 @@ impl ReminderService {
                             if let Some(ref lunch_time) = user.lunch_time {
                                 log::debug!("🍱 Checking lunch for {}: current={}, target={}", user.phone_number, current_time, lunch_time);
                                 if &current_time == lunch_time {
-                                    let msg = "🌞 Öğle yemeği zamanı!\n\nÖğle yemeğini yaptıktan sonra fotoğrafını paylaş 📸";
+                                    let msg = "🌞 *Öğle yemeği zamanı!*\n\nYedikten sonra fotoğrafını gönder 📸";
                                     let _ = whatsapp.send_message(&user.phone_number, msg).await;
                                     log::info!("📤 Sent lunch reminder to {} ({})", user.phone_number, user.timezone);
                                 }
@@ -111,7 +111,7 @@ impl ReminderService {
                             if let Some(ref dinner_time) = user.dinner_time {
                                 log::debug!("🍽️ Checking dinner for {}: current={}, target={}", user.phone_number, current_time, dinner_time);
                                 if &current_time == dinner_time {
-                                    let msg = "🌙 Akşam yemeği zamanı!\n\nAkşam yemeğini kaydedelim 📸";
+                                    let msg = "🌙 *Akşam yemeği zamanı!*\n\nYedikten sonra fotoğrafını gönder 📸";
                                     let _ = whatsapp.send_message(&user.phone_number, msg).await;
                                     log::info!("📤 Sent dinner reminder to {} ({})", user.phone_number, user.timezone);
                                 }
@@ -142,7 +142,7 @@ impl ReminderService {
                 use chrono::Timelike;
                 use chrono_tz::Tz;
 
-                let message = "💧 Su içme zamanı!\n\nEn az 1 bardak su içmeyi unutma. Su içtikten sonra kaydedebilirsin (örn: '250 ml su içtim')";
+                let message = "💧 *Su içme zamanı!*\n\nEn az 1 bardak su iç.\nKaydet: 250 ml su içtim";
 
                 if let Ok(users) = db.get_all_users().await {
                     log::debug!("💧 Water reminder check running for {} users", users.len());

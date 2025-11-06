@@ -43,14 +43,9 @@ impl OnboardingHandler {
     }
 
     async fn start_onboarding(&self, user: &User) -> Result<()> {
-        let welcome_msg = "🍽️ *Beslenme Takip Onboarding'i Başlatıyoruz!*\n\n\
-Sizin için kişiselleştirilmiş beslenme takibi yapacağım.\n\n\
-📅 *Öğün Saatlerinizi Öğrenmem Gerekiyor:*\n\
-• Kahvaltı zamanınız\n\
-• Öğle yemeği zamanınız\n\
-• Akşam yemeği zamanınız\n\n\
-Bu bilgiler sayesinde size hatırlatmalar gönderebilirim.\n\n\
-*Kahvaltı saatiniz nedir?* (Örnek: 09:00)";
+        let welcome_msg = "🍽️ *Hoş geldin!*\n\n\
+Beslenme takibini kişiselleştirmek için öğün saatlerini öğrenmeliyim.\n\n\
+*Kahvaltı saatin?*\nÖrnek: 09:00";
 
         self.whatsapp.send_message(&user.phone_number, welcome_msg).await?;
 
@@ -65,16 +60,12 @@ Bu bilgiler sayesinde size hatırlatmalar gönderebilirim.\n\n\
         if self.validate_time_format(time) {
             self.db.update_meal_time(&user.phone_number, "breakfast", time).await?;
 
-            let msg = format!("✅ *Kahvaltı saati kaydedildi:* {}\n\n\
-Şimdi öğle yemeği saatinizi öğrenebilir miyim?\n\
-(Örnek: 13:00)", time);
+            let msg = format!("✅ Kahvaltı: {}\n\n*Öğle yemeği saatin?*\nÖrnek: 13:00", time);
 
             self.whatsapp.send_message(&user.phone_number, &msg).await?;
             self.db.update_onboarding_step(&user.phone_number, Some("lunch_time".to_string())).await?;
         } else {
-            let msg = "❌ *Geçersiz saat formatı*\n\n\
-Lütfen HH:MM formatında girin.\n\
-Örnek: 09:00, 13:30, 19:45";
+            let msg = "❌ Geçersiz format\n\nHH:MM olmalı\nÖrnek: 09:00";
 
             self.whatsapp.send_message(&user.phone_number, msg).await?;
         }
@@ -85,16 +76,12 @@ Lütfen HH:MM formatında girin.\n\
         if self.validate_time_format(time) {
             self.db.update_meal_time(&user.phone_number, "lunch", time).await?;
 
-            let msg = format!("✅ *Öğle yemeği saati kaydedildi:* {}\n\n\
-Son olarak akşam yemeği saatinizi öğrenebilir miyim?\n\
-(Örnek: 19:00)", time);
+            let msg = format!("✅ Öğle: {}\n\n*Akşam yemeği saatin?*\nÖrnek: 19:00", time);
 
             self.whatsapp.send_message(&user.phone_number, &msg).await?;
             self.db.update_onboarding_step(&user.phone_number, Some("dinner_time".to_string())).await?;
         } else {
-            let msg = "❌ *Geçersiz saat formatı*\n\n\
-Lütfen HH:MM formatında girin.\n\
-Örnek: 09:00, 13:30, 19:45";
+            let msg = "❌ Geçersiz format\n\nHH:MM olmalı\nÖrnek: 09:00";
 
             self.whatsapp.send_message(&user.phone_number, msg).await?;
         }
@@ -107,9 +94,7 @@ Lütfen HH:MM formatında girin.\n\
             self.db.update_onboarding_step(&user.phone_number, None).await?;
             self.db.complete_onboarding(&user.phone_number).await?;
         } else {
-            let msg = "❌ *Geçersiz saat formatı*\n\n\
-Lütfen HH:MM formatında girin.\n\
-Örnek: 09:00, 13:30, 19:45";
+            let msg = "❌ Geçersiz format\n\nHH:MM olmalı\nÖrnek: 09:00";
 
             self.whatsapp.send_message(&user.phone_number, msg).await?;
             return Ok(());
@@ -119,14 +104,14 @@ Lütfen HH:MM formatında girin.\n\
         let updated_user = self.db.get_user(&user.phone_number).await?
             .ok_or_else(|| anyhow::anyhow!("User not found after onboarding completion"))?;
 
-        let completion_msg = format!("🎉 *Onboarding Tamamlandı!*\n\n\
+        let completion_msg = format!("🎉 *Hazırsın!*\n\n\
 ✅ Kahvaltı: {}\n\
 ✅ Öğle: {}\n\
 ✅ Akşam: {}\n\n\
-Artık beslenme takibinizi başlatabilirsiniz!\n\n\
-📸 *Yemek fotoğrafı gönderin* - Kalori analizi\n\
-💧 *'250 ml su içtim'* - Su takibi\n\
-📊 *'/rapor'* - Günlük rapor\n\n\
+*Nasıl kullanılır?*\n\
+📸 Yemek fotoğrafı gönder\n\
+💧 250 ml su içtim\n\
+📊 rapor\n\n\
 İyi beslenmeler! 🥗",
             updated_user.breakfast_time.as_deref().unwrap_or(""),
             updated_user.lunch_time.as_deref().unwrap_or(""),
