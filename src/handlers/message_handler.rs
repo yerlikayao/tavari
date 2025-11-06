@@ -106,32 +106,9 @@ impl MessageHandler {
         Ok(())
     }
 
-    /// Kullanıcının saatine ve öğün saatlerine göre öğün tipini akıllıca belirle
-    /// Kullanıcının zaman dilimine göre bugünün tarihini al
-    async fn get_user_today(&self, from: &str) -> Result<chrono::NaiveDate> {
-        let user = self.db.get_user(from).await?;
-        let user_tz: chrono_tz::Tz = user
-            .as_ref()
-            .and_then(|u| u.timezone.parse().ok())
-            .unwrap_or(chrono_tz::Europe::Istanbul);
-
-        let now = Utc::now().with_timezone(&user_tz);
-        Ok(now.date_naive())
-    }
-
-    async fn detect_meal_type(&self, from: &str) -> Result<MealType> {
-        // Kullanıcı bilgilerini al
-        let user = match self.db.get_user(from).await? {
-            Some(u) => u,
-            None => return Ok(MealType::Snack), // Kullanıcı yoksa ara öğün
-        };
-
-        // Kullanıcının zaman dilimine göre şu anki saati al
-        let user_tz: chrono_tz::Tz = user.timezone.parse().unwrap_or(chrono_tz::Europe::Istanbul);
-        let now = Utc::now().with_timezone(&user_tz);
-        let current_time = now.time();
-
-        log::debug!("🕐 Detecting meal type for user {} at {} (timezone: {})", from, current_time, user.timezone);
+    /// Optimized: Detect meal type without fetching user (user already available)
+    fn detect_meal_type_with_user(&self, user: &User, current_time: chrono::NaiveTime) -> Result<MealType> {
+        log::debug!("🕐 Detecting meal type for user {} at {} (timezone: {})", user.phone_number, current_time, user.timezone);
 
         // Kullanıcının öğün saatlerini parse et
         let breakfast_time = user.breakfast_time.as_ref()
@@ -192,8 +169,13 @@ impl MessageHandler {
         // AI'dan yemek analizi al
         match self.openai.analyze_text_meal(description).await {
             Ok(calorie_info) => {
-                // Akıllı öğün tespiti
-                let meal_type = self.detect_meal_type(from).await?;
+                // Kullanıcı bilgilerini tek seferde al (hem timezone hem de meal detection için)
+                let user = self.db.get_user(from).await?.ok_or_else(|| anyhow::anyhow!("User not found"))?;
+                let user_tz: chrono_tz::Tz = user.timezone.parse().unwrap_or(chrono_tz::Europe::Istanbul);
+                let now = Utc::now().with_timezone(&user_tz);
+
+                // Akıllı öğün tespiti (user'ı tekrar fetch etmeden)
+                let meal_type = self.detect_meal_type_with_user(&user, now.time())?;
 
                 let meal = Meal {
                     id: None,
@@ -207,7 +189,7 @@ impl MessageHandler {
 
                 self.db.add_meal(&meal).await?;
 
-                let today = self.get_user_today(from).await?;
+                let today = now.date_naive();
                 let stats = self.db.get_daily_stats(from, today).await?;
 
                 // Öğün tipine göre emoji seç
@@ -256,8 +238,13 @@ impl MessageHandler {
     }
 
     async fn handle_food_image(&self, from: &str, image_path: &str) -> Result<()> {
+        // Kullanıcı bilgilerini tek seferde al (hem timezone hem de meal detection için)
+        let user = self.db.get_user(from).await?.ok_or_else(|| anyhow::anyhow!("User not found"))?;
+        let user_tz: chrono_tz::Tz = user.timezone.parse().unwrap_or(chrono_tz::Europe::Istanbul);
+        let now = Utc::now().with_timezone(&user_tz);
+        let today = now.date_naive();
+
         // Günlük resim limiti kontrolü (max 20)
-        let today = self.get_user_today(from).await?;
         let daily_image_count = self.db.get_daily_image_count(from, today).await?;
 
         if daily_image_count >= 20 {
@@ -276,8 +263,8 @@ impl MessageHandler {
 
         match self.openai.analyze_food_image(image_path).await {
             Ok(calorie_info) => {
-                // Akıllı öğün tespiti
-                let meal_type = self.detect_meal_type(from).await?;
+                // Akıllı öğün tespiti (user'ı tekrar fetch etmeden)
+                let meal_type = self.detect_meal_type_with_user(&user, now.time())?;
 
                 let meal = Meal {
                     id: None,
@@ -353,12 +340,14 @@ impl MessageHandler {
 
         self.db.add_water_log(&water_log).await?;
 
-        let today = self.get_user_today(from).await?;
-        let stats = self.db.get_daily_stats(from, today).await?;
+        // Kullanıcı bilgilerini tek seferde al (hem timezone hem de water_goal için)
+        let user = self.db.get_user(from).await?.ok_or_else(|| anyhow::anyhow!("User not found"))?;
 
-        // Kullanıcının su hedefini al
-        let user = self.db.get_user(from).await?;
-        let water_goal = user.and_then(|u| u.daily_water_goal).unwrap_or(2000);
+        let user_tz: chrono_tz::Tz = user.timezone.parse().unwrap_or(chrono_tz::Europe::Istanbul);
+        let today = Utc::now().with_timezone(&user_tz).date_naive();
+
+        let stats = self.db.get_daily_stats(from, today).await?;
+        let water_goal = user.daily_water_goal.unwrap_or(2000);
 
         let response = format!(
             "💧 {} ml su kaydedildi!\n\n\
@@ -414,7 +403,9 @@ impl MessageHandler {
         let matched = match *main_word {
             // Rapor komutları
             "rapor" | "report" | "özet" | "ozet" | "summary" => {
-                let today = self.get_user_today(from).await?;
+                let user = self.db.get_user(from).await?.ok_or_else(|| anyhow::anyhow!("User not found"))?;
+                let user_tz: chrono_tz::Tz = user.timezone.parse().unwrap_or(chrono_tz::Europe::Istanbul);
+                let today = Utc::now().with_timezone(&user_tz).date_naive();
                 let stats = self.db.get_daily_stats(from, today).await?;
                 let report = crate::services::whatsapp::format_daily_report(
                     stats.total_calories,
@@ -455,12 +446,12 @@ impl MessageHandler {
             }
             // Tavsiye komutları
             "tavsiye" | "öneri" | "oneri" | "advice" | "tip" | "tips" => {
-                let today = self.get_user_today(from).await?;
+                // Kullanıcı bilgilerini tek seferde al (hem timezone hem de water_goal için)
+                let user = self.db.get_user(from).await?.ok_or_else(|| anyhow::anyhow!("User not found"))?;
+                let user_tz: chrono_tz::Tz = user.timezone.parse().unwrap_or(chrono_tz::Europe::Istanbul);
+                let today = Utc::now().with_timezone(&user_tz).date_naive();
                 let stats = self.db.get_daily_stats(from, today).await?;
-
-                // Kullanıcının su hedefini al
-                let user = self.db.get_user(from).await?;
-                let water_goal = user.and_then(|u| u.daily_water_goal).unwrap_or(2000);
+                let water_goal = user.daily_water_goal.unwrap_or(2000);
 
                 match self
                     .openai
