@@ -74,6 +74,22 @@ impl Database {
         .execute(&self.pool)
         .await?;
 
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS favorite_meals (
+                id SERIAL PRIMARY KEY,
+                user_phone TEXT NOT NULL REFERENCES users(phone_number),
+                name TEXT NOT NULL,
+                description TEXT NOT NULL,
+                calories DOUBLE PRECISION NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL,
+                UNIQUE(user_phone, name)
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
         // Migration: Add new columns if they don't exist (for existing deployments)
         // This is safe to run multiple times
         sqlx::query(
@@ -95,6 +111,30 @@ impl Database {
                 ) THEN
                     ALTER TABLE users ADD COLUMN daily_water_goal INTEGER DEFAULT 2000;
                 END IF;
+
+                -- Add daily_calorie_goal column if not exists
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name='users' AND column_name='daily_calorie_goal'
+                ) THEN
+                    ALTER TABLE users ADD COLUMN daily_calorie_goal INTEGER DEFAULT 2000;
+                END IF;
+
+                -- Add silent_hours_start column if not exists
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name='users' AND column_name='silent_hours_start'
+                ) THEN
+                    ALTER TABLE users ADD COLUMN silent_hours_start TEXT DEFAULT '23:00';
+                END IF;
+
+                -- Add silent_hours_end column if not exists
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name='users' AND column_name='silent_hours_end'
+                ) THEN
+                    ALTER TABLE users ADD COLUMN silent_hours_end TEXT DEFAULT '07:00';
+                END IF;
             END $$;
             "#,
         )
@@ -110,6 +150,18 @@ impl Database {
             .execute(&self.pool)
             .await?;
 
+        sqlx::query("UPDATE users SET daily_calorie_goal = 2000 WHERE daily_calorie_goal IS NULL")
+            .execute(&self.pool)
+            .await?;
+
+        sqlx::query("UPDATE users SET silent_hours_start = '23:00' WHERE silent_hours_start IS NULL")
+            .execute(&self.pool)
+            .await?;
+
+        sqlx::query("UPDATE users SET silent_hours_end = '07:00' WHERE silent_hours_end IS NULL")
+            .execute(&self.pool)
+            .await?;
+
         Ok(())
     }
 
@@ -120,8 +172,9 @@ impl Database {
                 phone_number, created_at, onboarding_completed, onboarding_step,
                 breakfast_reminder, lunch_reminder, dinner_reminder, water_reminder,
                 breakfast_time, lunch_time, dinner_time, opted_in, timezone,
-                water_reminder_interval, daily_water_goal
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                water_reminder_interval, daily_water_goal, daily_calorie_goal,
+                silent_hours_start, silent_hours_end
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
             ON CONFLICT (phone_number) DO NOTHING
             "#,
         )
@@ -140,6 +193,9 @@ impl Database {
         .bind(&user.timezone)
         .bind(user.water_reminder_interval)
         .bind(user.daily_water_goal)
+        .bind(user.daily_calorie_goal)
+        .bind(&user.silent_hours_start)
+        .bind(&user.silent_hours_end)
         .execute(&self.pool)
         .await?;
 
@@ -152,7 +208,8 @@ impl Database {
             SELECT phone_number, created_at, onboarding_completed, onboarding_step,
                    breakfast_reminder, lunch_reminder, dinner_reminder, water_reminder,
                    breakfast_time, lunch_time, dinner_time, opted_in, timezone,
-                   water_reminder_interval, daily_water_goal
+                   water_reminder_interval, daily_water_goal, daily_calorie_goal,
+                   silent_hours_start, silent_hours_end
             FROM users WHERE phone_number = $1
             "#,
         )
@@ -175,6 +232,9 @@ impl Database {
             timezone: row.get(12),
             water_reminder_interval: row.get(13),
             daily_water_goal: row.get(14),
+            daily_calorie_goal: row.get(15),
+            silent_hours_start: row.get(16),
+            silent_hours_end: row.get(17),
         });
 
         Ok(user)
@@ -186,7 +246,8 @@ impl Database {
             SELECT phone_number, created_at, onboarding_completed, onboarding_step,
                    breakfast_reminder, lunch_reminder, dinner_reminder, water_reminder,
                    breakfast_time, lunch_time, dinner_time, opted_in, timezone,
-                   water_reminder_interval, daily_water_goal
+                   water_reminder_interval, daily_water_goal, daily_calorie_goal,
+                   silent_hours_start, silent_hours_end
             FROM users
             "#,
         )
@@ -211,6 +272,9 @@ impl Database {
                 timezone: row.get(12),
                 water_reminder_interval: row.get(13),
                 daily_water_goal: row.get(14),
+                daily_calorie_goal: row.get(15),
+                silent_hours_start: row.get(16),
+                silent_hours_end: row.get(17),
             })
             .collect();
 
@@ -458,5 +522,138 @@ impl Database {
 
         let count: i64 = result.get(0);
         Ok(count)
+    }
+
+    // ============================================================
+    // Favorite Meals CRUD Functions
+    // ============================================================
+
+    /// Add a new favorite meal
+    pub async fn add_favorite_meal(&self, favorite: &crate::models::FavoriteMeal) -> Result<i64> {
+        let result = sqlx::query(
+            r#"
+            INSERT INTO favorite_meals (user_phone, name, description, calories, created_at)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (user_phone, name)
+            DO UPDATE SET description = $3, calories = $4
+            RETURNING id
+            "#,
+        )
+        .bind(&favorite.user_phone)
+        .bind(&favorite.name)
+        .bind(&favorite.description)
+        .bind(favorite.calories)
+        .bind(favorite.created_at)
+        .fetch_one(&self.pool)
+        .await?;
+
+        let id: i64 = result.get(0);
+        Ok(id)
+    }
+
+    /// Get all favorite meals for a user
+    pub async fn get_favorite_meals(&self, user_phone: &str) -> Result<Vec<crate::models::FavoriteMeal>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT id, user_phone, name, description, calories, created_at
+            FROM favorite_meals
+            WHERE user_phone = $1
+            ORDER BY created_at DESC
+            "#,
+        )
+        .bind(user_phone)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let favorites = rows
+            .into_iter()
+            .map(|row| crate::models::FavoriteMeal {
+                id: row.get(0),
+                user_phone: row.get(1),
+                name: row.get(2),
+                description: row.get(3),
+                calories: row.get(4),
+                created_at: row.get(5),
+            })
+            .collect();
+
+        Ok(favorites)
+    }
+
+    /// Get a specific favorite meal by name
+    pub async fn get_favorite_meal_by_name(
+        &self,
+        user_phone: &str,
+        name: &str,
+    ) -> Result<Option<crate::models::FavoriteMeal>> {
+        let favorite = sqlx::query(
+            r#"
+            SELECT id, user_phone, name, description, calories, created_at
+            FROM favorite_meals
+            WHERE user_phone = $1 AND name = $2
+            "#,
+        )
+        .bind(user_phone)
+        .bind(name)
+        .fetch_optional(&self.pool)
+        .await?
+        .map(|row| crate::models::FavoriteMeal {
+            id: row.get(0),
+            user_phone: row.get(1),
+            name: row.get(2),
+            description: row.get(3),
+            calories: row.get(4),
+            created_at: row.get(5),
+        });
+
+        Ok(favorite)
+    }
+
+    /// Delete a favorite meal
+    pub async fn delete_favorite_meal(&self, user_phone: &str, name: &str) -> Result<()> {
+        sqlx::query(
+            r#"
+            DELETE FROM favorite_meals
+            WHERE user_phone = $1 AND name = $2
+            "#,
+        )
+        .bind(user_phone)
+        .bind(name)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Update calorie goal for user
+    pub async fn update_calorie_goal(&self, phone_number: &str, goal_kcal: i32) -> Result<()> {
+        sqlx::query(
+            "UPDATE users SET daily_calorie_goal = $1 WHERE phone_number = $2",
+        )
+        .bind(goal_kcal)
+        .bind(phone_number)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Update silent hours for user
+    pub async fn update_silent_hours(
+        &self,
+        phone_number: &str,
+        start: &str,
+        end: &str,
+    ) -> Result<()> {
+        sqlx::query(
+            "UPDATE users SET silent_hours_start = $1, silent_hours_end = $2 WHERE phone_number = $3",
+        )
+        .bind(start)
+        .bind(end)
+        .bind(phone_number)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
     }
 }

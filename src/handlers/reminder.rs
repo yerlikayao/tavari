@@ -48,6 +48,7 @@ impl ReminderService {
 
             Box::pin(async move {
                 use chrono::Utc;
+                use chrono::Timelike;
                 use chrono_tz::Tz;
 
                 if let Ok(users) = db.get_all_users().await {
@@ -65,6 +66,21 @@ impl ReminderService {
                         let current_time = now_user.format("%H:%M").to_string();
 
                         log::debug!("⏰ User {} - Current time: {} (TZ: {})", user.phone_number, current_time, user.timezone);
+
+                        // Check silent hours
+                        let silent_start = user.silent_hours_start.as_deref().unwrap_or("23:00");
+                        let silent_end = user.silent_hours_end.as_deref().unwrap_or("07:00");
+                        let is_silent = Self::is_silent_hours(
+                            now_user.hour(),
+                            now_user.minute(),
+                            silent_start,
+                            silent_end,
+                        );
+
+                        if is_silent {
+                            log::debug!("🌙 User {} - In silent hours ({} - {}), skipping meal reminders", user.phone_number, silent_start, silent_end);
+                            continue;
+                        }
 
                         // Kahvaltı kontrolü
                         if user.breakfast_reminder {
@@ -140,6 +156,21 @@ impl ReminderService {
 
                             log::debug!("💧 User {} - Current hour: {} (TZ: {}), checking if in [8,10,12,14,16,18,20,22]", user.phone_number, current_hour, user.timezone);
 
+                            // Check silent hours
+                            let silent_start = user.silent_hours_start.as_deref().unwrap_or("23:00");
+                            let silent_end = user.silent_hours_end.as_deref().unwrap_or("07:00");
+                            let is_silent = Self::is_silent_hours(
+                                now_user.hour(),
+                                now_user.minute(),
+                                silent_start,
+                                silent_end,
+                            );
+
+                            if is_silent {
+                                log::debug!("🌙 User {} - In silent hours ({} - {}), skipping water reminder", user.phone_number, silent_start, silent_end);
+                                continue;
+                            }
+
                             // Su içme saatleri: 8,10,12,14,16,18,20,22
                             if [8, 10, 12, 14, 16, 18, 20, 22].contains(&current_hour) {
                                 let _ = whatsapp.send_message(&user.phone_number, message).await;
@@ -198,6 +229,8 @@ impl ReminderService {
                                     stats.total_water_ml,
                                     stats.meals_count,
                                     stats.water_logs_count,
+                                    user.daily_calorie_goal.unwrap_or(2000),
+                                    user.daily_water_goal.unwrap_or(2000),
                                 );
 
                                 let message = format!("🌙 *Günlük Özet*\n\n{}", report);
@@ -220,5 +253,48 @@ impl ReminderService {
         self.scheduler.shutdown().await?;
         log::info!("Reminder service stopped");
         Ok(())
+    }
+
+    /// Check if current time is within user's silent hours
+    /// Silent hours can cross midnight (e.g., 23:00 - 07:00)
+    fn is_silent_hours(
+        current_hour: u32,
+        current_minute: u32,
+        start: &str,
+        end: &str,
+    ) -> bool {
+        // Parse start and end times
+        let parse_time = |time_str: &str| -> Option<(u32, u32)> {
+            let parts: Vec<&str> = time_str.split(':').collect();
+            if parts.len() != 2 {
+                return None;
+            }
+            let h = parts[0].parse::<u32>().ok()?;
+            let m = parts[1].parse::<u32>().ok()?;
+            Some((h, m))
+        };
+
+        let (start_h, start_m) = match parse_time(start) {
+            Some(t) => t,
+            None => return false, // Invalid format, don't block
+        };
+
+        let (end_h, end_m) = match parse_time(end) {
+            Some(t) => t,
+            None => return false,
+        };
+
+        // Convert to minutes since midnight for easier comparison
+        let current_minutes = current_hour * 60 + current_minute;
+        let start_minutes = start_h * 60 + start_m;
+        let end_minutes = end_h * 60 + end_m;
+
+        if start_minutes < end_minutes {
+            // Normal case: e.g., 08:00 - 22:00
+            current_minutes >= start_minutes && current_minutes < end_minutes
+        } else {
+            // Crosses midnight: e.g., 23:00 - 07:00
+            current_minutes >= start_minutes || current_minutes < end_minutes
+        }
     }
 }

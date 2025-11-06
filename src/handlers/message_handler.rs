@@ -99,6 +99,9 @@ impl MessageHandler {
                 timezone: "Europe/Istanbul".to_string(),  // Varsayılan Türkiye
                 water_reminder_interval: Some(120),  // Varsayılan: 2 saat (120 dakika)
                 daily_water_goal: Some(2000),  // Varsayılan: 2 litre (2000 ml)
+                daily_calorie_goal: Some(2000),  // Varsayılan: 2000 kcal
+                silent_hours_start: Some("23:00".to_string()),  // Varsayılan: 23:00
+                silent_hours_end: Some("07:00".to_string()),    // Varsayılan: 07:00
             };
             self.db.create_user(&user).await?;
             log::info!("✅ New user created: {}", phone);
@@ -412,6 +415,8 @@ impl MessageHandler {
                     stats.total_water_ml,
                     stats.meals_count,
                     stats.water_logs_count,
+                    user.daily_calorie_goal.unwrap_or(2000),
+                    user.daily_water_goal.unwrap_or(2000),
                 );
                 self.whatsapp.send_message(from, &report).await?;
                 true
@@ -511,6 +516,21 @@ impl MessageHandler {
                 self.handle_water_goal_command(from, &parts).await?;
                 true
             }
+            // Kalori hedefi komutları
+            "kalorihedefi" | "caloriegoal" | "kalorihedfi" => {
+                self.handle_calorie_goal_command(from, &parts).await?;
+                true
+            }
+            // Sessiz saatler komutları
+            "sessiz" | "silent" | "silentsaatler" => {
+                self.handle_silent_hours_command(from, &parts).await?;
+                true
+            }
+            // Favori yemekler komutları
+            "favori" | "favoriler" | "favorite" | "favorites" | "fav" => {
+                self.handle_favorite_meals_command(from, &parts).await?;
+                true
+            }
             // Öğün kayıt komutları (text-based meal logging)
             "ogun" | "yemek" | "meal" | "food" => {
                 if parts.len() < 2 {
@@ -523,6 +543,12 @@ impl MessageHandler {
                     let description = parts[1..].join(" ");
                     self.handle_text_meal(from, &description).await?;
                 }
+                true
+            }
+            // Check for quick favorite patterns (fav1, fav2, etc.)
+            word if word.starts_with("fav") && word.len() > 3 => {
+                let name = word.to_string();
+                self.handle_quick_favorite(from, &name).await?;
                 true
             }
             _ => false,
@@ -805,5 +831,255 @@ impl MessageHandler {
             (Ok(h), Ok(m)) => h < 24 && m < 60,
             _ => false,
         }
+    }
+
+    // ============================================================
+    // New Command Handlers
+    // ============================================================
+
+    async fn handle_calorie_goal_command(&self, from: &str, parts: &[&str]) -> Result<()> {
+        if parts.len() < 2 {
+            let user = self.db.get_user(from).await?.ok_or_else(|| anyhow::anyhow!("User not found"))?;
+            let current_goal = user.daily_calorie_goal.unwrap_or(2000);
+            self.whatsapp.send_message(
+                from,
+                &format!(
+                    "🎯 *Günlük Kalori Hedefi*\n\n\
+                     Mevcut hedefiniz: {} kcal\n\n\
+                     Değiştirmek için:\n\
+                     `kalorihedefi [miktar]`\n\n\
+                     Örnek: kalorihedefi 2500",
+                    current_goal
+                )
+            ).await?;
+            return Ok(());
+        }
+
+        let goal: i32 = parts[1].parse().map_err(|_| anyhow::anyhow!("Geçersiz sayı"))?;
+
+        if !(500..=5000).contains(&goal) {
+            self.whatsapp.send_message(
+                from,
+                "❌ Kalori hedefi 500-5000 kcal arasında olmalıdır."
+            ).await?;
+            return Ok(());
+        }
+
+        self.db.update_calorie_goal(from, goal).await?;
+        self.whatsapp.send_message(
+            from,
+            &format!("✅ Günlük kalori hedefiniz {} kcal olarak güncellendi!", goal)
+        ).await?;
+
+        Ok(())
+    }
+
+    async fn handle_silent_hours_command(&self, from: &str, parts: &[&str]) -> Result<()> {
+        if parts.len() < 3 {
+            let user = self.db.get_user(from).await?.ok_or_else(|| anyhow::anyhow!("User not found"))?;
+            let start = user.silent_hours_start.as_deref().unwrap_or("23:00");
+            let end = user.silent_hours_end.as_deref().unwrap_or("07:00");
+
+            self.whatsapp.send_message(
+                from,
+                &format!(
+                    "🌙 *Sessiz Saatler*\n\n\
+                     Mevcut ayarınız: {} - {}\n\n\
+                     Bu saatler arasında hatırlatma gönderilmez.\n\n\
+                     Değiştirmek için:\n\
+                     `sessiz [başlangıç] [bitiş]`\n\n\
+                     Örnek: sessiz 23:00 07:00",
+                    start, end
+                )
+            ).await?;
+            return Ok(());
+        }
+
+        let start = parts[1];
+        let end = parts[2];
+
+        if !self.validate_time_format(start) || !self.validate_time_format(end) {
+            self.whatsapp.send_message(
+                from,
+                "❌ Geçersiz saat formatı. HH:MM formatında girin.\nÖrnek: sessiz 23:00 07:00"
+            ).await?;
+            return Ok(());
+        }
+
+        self.db.update_silent_hours(from, start, end).await?;
+        self.whatsapp.send_message(
+            from,
+            &format!("✅ Sessiz saatleriniz {} - {} olarak güncellendi!", start, end)
+        ).await?;
+
+        Ok(())
+    }
+
+    async fn handle_favorite_meals_command(&self, from: &str, parts: &[&str]) -> Result<()> {
+        // Sub-command handling: favori [ekle|liste|sil]
+        if parts.len() < 2 {
+            // No sub-command: show list
+            let favorites = self.db.get_favorite_meals(from).await?;
+
+            if favorites.is_empty() {
+                self.whatsapp.send_message(
+                    from,
+                    "⭐ *Favori Yemekler*\n\n\
+                     Henüz favori yemeğiniz yok.\n\n\
+                     *Ekleme:*\n\
+                     `favori ekle [isim] [açıklama]`\n\
+                     Örnek: favori ekle fav1 Tavuklu pilav\n\n\
+                     *Kullanım:*\n\
+                     Eklediğiniz favorileri `fav1`, `fav2` gibi kısayollarla kullanabilirsiniz."
+                ).await?;
+                return Ok(());
+            }
+
+            let mut response = "⭐ *Favori Yemekleriniz*\n\n".to_string();
+            for fav in favorites.iter() {
+                response.push_str(&format!(
+                    "• `{}` - {} ({:.0} kcal)\n",
+                    fav.name, fav.description, fav.calories
+                ));
+            }
+            response.push_str("\n*Kullanım:*\nMesaj olarak favori adını yazın (örn: `fav1`)");
+
+            self.whatsapp.send_message(from, &response).await?;
+            return Ok(());
+        }
+
+        let subcommand = parts[1];
+        match subcommand {
+            "ekle" | "add" => {
+                if parts.len() < 4 {
+                    self.whatsapp.send_message(
+                        from,
+                        "❌ Kullanım: favori ekle [isim] [açıklama]\n\nÖrnek: favori ekle fav1 Tavuklu pilav ve salata"
+                    ).await?;
+                    return Ok(());
+                }
+
+                let name = parts[2].to_lowercase();
+                let description = parts[3..].join(" ");
+
+                // Validate name (only alphanumeric and Turkish characters)
+                if !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                    self.whatsapp.send_message(
+                        from,
+                        "❌ Favori ismi sadece harf, rakam ve _ içerebilir."
+                    ).await?;
+                    return Ok(());
+                }
+
+                // Get calorie estimate from OpenAI
+                let (calories, analyzed_description) = match self.openai.analyze_text_meal(&description).await {
+                    Ok(info) => (info.calories, info.description),
+                    Err(e) => {
+                        log::warn!("Failed to analyze favorite meal calories: {:?}", e);
+                        (0.0, description.clone()) // Default to 0 if analysis fails
+                    }
+                };
+
+                let favorite = crate::models::FavoriteMeal {
+                    id: None,
+                    user_phone: from.to_string(),
+                    name: name.clone(),
+                    description: analyzed_description.clone(),
+                    calories,
+                    created_at: Utc::now(),
+                };
+
+                self.db.add_favorite_meal(&favorite).await?;
+                self.whatsapp.send_message(
+                    from,
+                    &format!(
+                        "✅ Favori eklendi!\n\n\
+                         • `{}` - {}\n\
+                         • Kalori: {:.0} kcal\n\n\
+                         Artık sadece `{}` yazarak bu yemeği kaydedebilirsiniz!",
+                        name, analyzed_description, calories, name
+                    )
+                ).await?;
+            }
+            "sil" | "delete" | "remove" => {
+                if parts.len() < 3 {
+                    self.whatsapp.send_message(
+                        from,
+                        "❌ Kullanım: favori sil [isim]\n\nÖrnek: favori sil fav1"
+                    ).await?;
+                    return Ok(());
+                }
+
+                let name = parts[2].to_lowercase();
+                self.db.delete_favorite_meal(from, &name).await?;
+                self.whatsapp.send_message(
+                    from,
+                    &format!("✅ `{}` favorilerden silindi.", name)
+                ).await?;
+            }
+            _ => {
+                self.whatsapp.send_message(
+                    from,
+                    "❌ Geçersiz komut.\n\n\
+                     Kullanılabilir komutlar:\n\
+                     • `favori` - Liste göster\n\
+                     • `favori ekle [isim] [açıklama]`\n\
+                     • `favori sil [isim]`"
+                ).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn handle_quick_favorite(&self, from: &str, name: &str) -> Result<()> {
+        // Try to get the favorite meal
+        let favorite = self.db.get_favorite_meal_by_name(from, name).await?;
+
+        if let Some(fav) = favorite {
+            // Detect meal type based on current time
+            let user = self.db.get_user(from).await?.ok_or_else(|| anyhow::anyhow!("User not found"))?;
+            let user_tz: chrono_tz::Tz = user.timezone.parse().unwrap_or(chrono_tz::Europe::Istanbul);
+            let now_user = Utc::now().with_timezone(&user_tz);
+            let current_time = now_user.time();
+            let meal_type = self.detect_meal_type_with_user(&user, current_time)?;
+
+            // Log the meal
+            let meal = crate::models::Meal {
+                id: None,
+                user_phone: from.to_string(),
+                meal_type: meal_type.clone(),
+                calories: fav.calories,
+                description: fav.description.clone(),
+                image_path: None,
+                created_at: Utc::now(),
+            };
+
+            self.db.add_meal(&meal).await?;
+
+            self.whatsapp.send_message(
+                from,
+                &format!(
+                    "✅ {} kaydedildi!\n\n\
+                     • {}\n\
+                     • Kalori: {:.0} kcal",
+                    meal_type.to_string(),
+                    fav.description,
+                    fav.calories
+                )
+            ).await?;
+        } else {
+            self.whatsapp.send_message(
+                from,
+                &format!(
+                    "❌ `{}` isimli favori bulunamadı.\n\n\
+                     Favori eklemek için:\n\
+                     `favori ekle {} [açıklama]`",
+                    name, name
+                )
+            ).await?;
+        }
+
+        Ok(())
     }
 }

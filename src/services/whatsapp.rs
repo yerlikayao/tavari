@@ -167,21 +167,55 @@ pub fn format_daily_report(
     total_water: i64,
     meals_count: i64,
     water_logs: i64,
+    calorie_goal: i32,
+    water_goal: i32,
 ) -> String {
+    // Progress bar oluştur
+    let calorie_bar = create_progress_bar(total_calories, calorie_goal as f64);
+    let water_bar = create_progress_bar(total_water as f64, water_goal as f64);
+
     format!(
         "📊 *Günlük Rapor*\n\n\
-         🍽️ Toplam Öğün: {}\n\
-         🔥 Toplam Kalori: {:.0} kcal\n\
-         💧 Toplam Su: {} ml ({:.1} litre)\n\
-         📝 Su Kayıt Sayısı: {}\n\n\
+         🔥 Kalori\n\
+         {}\n\
+         {:.0}/{:.0} kcal ({}%)\n\n\
+         💧 Su\n\
+         {}\n\
+         {}/{} ml ({}%)\n\n\
+         🍽️ Öğün Sayısı: {}\n\
+         📝 Su Kayıt: {}\n\n\
          {}",
-        meals_count,
+        calorie_bar.bar,
         total_calories,
+        calorie_goal,
+        calorie_bar.percentage,
+        water_bar.bar,
         total_water,
-        total_water as f64 / 1000.0,
+        water_goal,
+        water_bar.percentage,
+        meals_count,
         water_logs,
         get_motivational_message(total_calories, total_water)
     )
+}
+
+struct ProgressBar {
+    bar: String,
+    percentage: i32,
+}
+
+fn create_progress_bar(current: f64, goal: f64) -> ProgressBar {
+    let percentage = ((current / goal) * 100.0).min(100.0) as i32;
+    let filled = (percentage / 10) as usize; // 10 basamak
+    let empty = 10 - filled;
+
+    let bar = format!(
+        "{}{}",
+        "█".repeat(filled),
+        "░".repeat(empty)
+    );
+
+    ProgressBar { bar, percentage }
 }
 
 fn get_motivational_message(calories: f64, water_ml: i64) -> String {

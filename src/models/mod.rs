@@ -18,6 +18,9 @@ pub struct User {
     pub timezone: String,  // IANA timezone (örn: "Europe/Istanbul", "America/New_York")
     pub water_reminder_interval: Option<i32>,  // Su hatırlatma aralığı (dakika cinsinden, varsayılan: 120)
     pub daily_water_goal: Option<i32>,  // Günlük su hedefi (ml cinsinden, varsayılan: 2000)
+    pub daily_calorie_goal: Option<i32>,  // Günlük kalori hedefi (kcal cinsinden, varsayılan: 2000)
+    pub silent_hours_start: Option<String>,  // Sessiz saatler başlangıcı (HH:MM, varsayılan: "23:00")
+    pub silent_hours_end: Option<String>,    // Sessiz saatler bitişi (HH:MM, varsayılan: "07:00")
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -76,4 +79,14 @@ pub struct DailyStats {
     pub total_water_ml: i64,
     pub meals_count: i64,
     pub water_logs_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FavoriteMeal {
+    pub id: Option<i64>,
+    pub user_phone: String,
+    pub name: String,          // Kısa isim (örn: "fav1", "tavuklu-pilav")
+    pub description: String,   // Tam açıklama (örn: "Tavuk göğsü ve pilav")
+    pub calories: f64,
+    pub created_at: DateTime<Utc>,
 }
