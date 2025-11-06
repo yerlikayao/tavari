@@ -55,18 +55,6 @@ impl MessageHandler {
 
         let message_lower = message.trim().to_lowercase();
 
-        // Button ID'lerini kontrol et (WhatsApp interactive button responses)
-        if message_lower.starts_with("water_") {
-            self.handle_water_button(from, message).await?;
-            return Ok(());
-        }
-
-        // Help mesajı komut butonları
-        if message_lower.starts_with("cmd_") {
-            self.handle_command_button(from, &message_lower).await?;
-            return Ok(());
-        }
-
         // Resim varsa öncelik ver (komutlardan önce)
         if has_media {
             if let Some(image_path) = media_path {
@@ -352,136 +340,6 @@ impl MessageHandler {
         Ok(())
     }
 
-    async fn handle_water_button(&self, from: &str, button_id: &str) -> Result<()> {
-        // Button ID'den miktarı çıkar (örn: "water_150" -> 150)
-        let amount = button_id
-            .trim_start_matches("water_")
-            .parse::<i32>()
-            .unwrap_or(200);
-
-        let water_log = WaterLog {
-            id: None,
-            user_phone: from.to_string(),
-            amount_ml: amount,
-            created_at: Utc::now(),
-        };
-
-        self.db.add_water_log(&water_log).await?;
-
-        let today = self.get_user_today(from).await?;
-        let stats = self.db.get_daily_stats(from, today).await?;
-
-        // Kullanıcının su hedefini al
-        let user = self.db.get_user(from).await?;
-        let water_goal = user.and_then(|u| u.daily_water_goal).unwrap_or(2000);
-
-        let response = format!(
-            "✅ {} ml su kaydedildi!\n\n\
-             Bugünkü toplam: {} ml ({:.1} litre)\n\
-             Hedef: {} ml ({:.1} litre)\n\n\
-             💡 Hızlı kayıt için:\n\
-             • su 150ml içtim\n\
-             • su 250ml içtim\n\
-             • su 500ml içtim",
-            amount,
-            stats.total_water_ml,
-            stats.total_water_ml as f64 / 1000.0,
-            water_goal,
-            water_goal as f64 / 1000.0
-        );
-
-        self.whatsapp.send_message(from, &response).await?;
-
-        Ok(())
-    }
-
-    async fn handle_command_button(&self, from: &str, button_id: &str) -> Result<()> {
-        match button_id {
-            "cmd_rapor" => {
-                // Günlük rapor göster
-                let today = self.get_user_today(from).await?;
-                let stats = self.db.get_daily_stats(from, today).await?;
-                let report = crate::services::whatsapp::format_daily_report(
-                    stats.total_calories,
-                    stats.total_water_ml,
-                    stats.meals_count,
-                    stats.water_logs_count,
-                );
-                self.whatsapp.send_message(from, &report).await?;
-            }
-            "cmd_tavsiye" => {
-                // AI tavsiye al
-                let today = self.get_user_today(from).await?;
-                let stats = self.db.get_daily_stats(from, today).await?;
-
-                // Kullanıcının su hedefini al
-                let user = self.db.get_user(from).await?;
-                let water_goal = user.and_then(|u| u.daily_water_goal).unwrap_or(2000);
-
-                match self
-                    .openai
-                    .get_nutrition_advice(
-                        stats.total_calories,
-                        stats.total_water_ml,
-                        water_goal,
-                        stats.meals_count
-                    )
-                    .await
-                {
-                    Ok(advice) => {
-                        self.whatsapp.send_message(from, &advice).await?;
-                    }
-                    Err(e) => {
-                        log::error!("❌ Failed to get nutrition advice: {:?}", e);
-                        log::error!("❌ Error details: {}", e);
-
-                        let error_msg = if e.to_string().contains("moderation") {
-                            "⚠️ AI hizmeti geçici olarak kullanılamıyor (içerik moderasyonu hatası). Lütfen daha sonra tekrar deneyin."
-                        } else if e.to_string().contains("Rate limit") {
-                            "⚠️ Çok fazla istek gönderildi. Lütfen birkaç dakika sonra tekrar deneyin."
-                        } else {
-                            "⚠️ Şu anda tavsiye alınamıyor. Lütfen daha sonra tekrar deneyin."
-                        };
-
-                        self.whatsapp
-                            .send_message(from, error_msg)
-                            .await?;
-                    }
-                }
-            }
-            "cmd_water" => {
-                // Su kayıt mesajı göster
-                let today = self.get_user_today(from).await?;
-                let stats = self.db.get_daily_stats(from, today).await?;
-
-                // Kullanıcının su hedefini al
-                let user = self.db.get_user(from).await?;
-                let water_goal = user.and_then(|u| u.daily_water_goal).unwrap_or(2000);
-
-                let response = format!(
-                    "💧 *Su Kayıt*\n\n\
-                     Bugünkü toplam: {} ml ({:.1} litre)\n\
-                     Hedef: {} ml ({:.1} litre)\n\n\
-                     💡 Hızlı kayıt için:\n\
-                     • su 150ml içtim\n\
-                     • su 250ml içtim\n\
-                     • su 500ml içtim",
-                    stats.total_water_ml,
-                    stats.total_water_ml as f64 / 1000.0,
-                    water_goal,
-                    water_goal as f64 / 1000.0
-                );
-
-                self.whatsapp.send_message(from, &response).await?;
-            }
-            _ => {
-                log::warn!("Unknown command button: {}", button_id);
-            }
-        }
-
-        Ok(())
-    }
-
     async fn handle_water_log(&self, from: &str, message: &str) -> Result<()> {
         // Mesajdan ml miktarını çıkar
         let amount = self.parse_water_amount(message);
@@ -550,7 +408,7 @@ impl MessageHandler {
         // Slash varsa kaldır
         let clean_msg = message.trim_start_matches('/').trim_start_matches('!');
         let parts: Vec<&str> = clean_msg.split_whitespace().collect();
-        let main_word = parts.get(0).unwrap_or(&"");
+        let main_word = parts.first().unwrap_or(&"");
 
         // Komut eşleştirmeleri - Türkçe karakterleri normalize et
         let matched = match *main_word {
@@ -884,7 +742,7 @@ impl MessageHandler {
 
         let goal_str = cmd_parts[1];
         match goal_str.parse::<i32>() {
-            Ok(goal) if goal >= 500 && goal <= 10000 => {
+            Ok(goal) if (500..=10000).contains(&goal) => {
                 self.db.update_water_goal(from, goal).await?;
 
                 self.whatsapp.send_message(

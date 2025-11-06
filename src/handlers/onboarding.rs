@@ -32,10 +32,8 @@ impl OnboardingHandler {
                 self.save_lunch_time(user, message).await?;
             }
             Some("dinner_time") => {
-                // Akşam saatini kaydet
+                // Akşam saatini kaydet (içinde onboarding tamamlama da var)
                 self.save_dinner_time(user, message).await?;
-                // Onboarding tamamla
-                self.complete_onboarding(user).await?;
             }
             _ => {
                 log::warn!("Unknown onboarding step: {:?}", user.onboarding_step);
@@ -137,11 +135,6 @@ Artık beslenme takibinizi başlatabilirsiniz!\n\n\
         self.whatsapp.send_message(&user.phone_number, &completion_msg).await?;
 
         log::info!("✅ Onboarding completed for user: {}", user.phone_number);
-        Ok(())
-    }
-
-    async fn complete_onboarding(&self, user: &User) -> Result<()> {
-        self.db.complete_onboarding(&user.phone_number).await?;
         Ok(())
     }
 

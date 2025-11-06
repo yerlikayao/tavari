@@ -85,10 +85,9 @@ impl OpenRouterService {
         // Dosya uzantısından MIME type belirle
         let mime_type = if image_path.ends_with(".png") {
             "image/png"
-        } else if image_path.ends_with(".jpg") || image_path.ends_with(".jpeg") {
-            "image/jpeg"
         } else {
-            "image/jpeg" // varsayılan
+            // jpg, jpeg ve diğer formatlar için varsayılan
+            "image/jpeg"
         };
 
         let data_url = format!("data:{};base64,{}", mime_type, base64_image);

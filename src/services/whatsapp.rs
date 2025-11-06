@@ -188,7 +188,7 @@ fn get_motivational_message(calories: f64, water_ml: i64) -> String {
     let recommended_water = 2000; // 2 litre
     let water_percentage = (water_ml as f64 / recommended_water as f64 * 100.0) as i32;
 
-    if water_percentage >= 100 && calories >= 1500.0 && calories <= 2500.0 {
+    if water_percentage >= 100 && (1500.0..=2500.0).contains(&calories) {
         "🎉 Harika! Hem kalori hedefinde hem de su tüketiminde başarılı!"
     } else if water_percentage < 50 {
         "💧 Su tüketimine dikkat et! Daha fazla su içmeyi unutma."

@@ -158,11 +158,7 @@ fn verify_webhook_signature(payload: &str, signature: &str, secret: &str) -> boo
     let expected_signature = hex::encode(result.into_bytes());
 
     // Bird.com typically sends signature as "sha256=<signature>"
-    let provided_signature = if signature.starts_with("sha256=") {
-        &signature[7..] // Remove "sha256=" prefix
-    } else {
-        signature
-    };
+    let provided_signature = signature.strip_prefix("sha256=").unwrap_or(signature);
 
     expected_signature == provided_signature
 }
