@@ -141,10 +141,18 @@ impl AdminService {
         Ok(meals.len() as i64)
     }
 
-    /// Get user's last activity timestamp
+    /// Get user's last activity timestamp (based on incoming messages only)
     async fn get_user_last_activity(&self, phone_number: &str) -> Result<Option<DateTime<Utc>>> {
-        let conversations = self.db.get_conversation_history(phone_number, 1).await?;
-        Ok(conversations.first().map(|c| c.created_at))
+        let conversations = self.db.get_conversation_history(phone_number, 100).await?;
+
+        // Find the most recent incoming message
+        let last_incoming = conversations
+            .iter()
+            .filter(|c| matches!(c.direction, crate::models::ConversationDirection::Incoming))
+            .map(|c| c.created_at)
+            .max();
+
+        Ok(last_incoming)
     }
 
     /// Toggle user active status

@@ -885,9 +885,18 @@
                 const time = formatRelativeTime(conv.created_at);
 
                 let imageHtml = '';
-                if (conv.metadata && conv.metadata.image_path) {
-                    imageHtml = `<img src="/images/${conv.metadata.image_path}" class="conversation-image" onclick="window.open(this.src, '_blank')">`;
+                // Check for image in metadata (media_path or image_path)
+                const imagePath = conv.metadata?.media_path || conv.metadata?.image_path;
+                if (imagePath) {
+                    // Extract just the filename from the path (e.g., "./data/images/img_123.jpg" -> "img_123.jpg")
+                    const filename = imagePath.split('/').pop();
+                    imageHtml = `<img src="/images/${filename}" class="conversation-image" onclick="window.open(this.src, '_blank')">`;
                 }
+
+                // Show message type for image messages with no content
+                const contentText = conv.message_type === 'image' && !conv.content
+                    ? '📷 Resim gönderildi'
+                    : escapeHtml(conv.content);
 
                 return `
                     <div class="conversation-item ${directionClass}">
@@ -895,7 +904,7 @@
                             <span>${directionText}</span>
                             <span class="conversation-time">${time}</span>
                         </div>
-                        <div class="conversation-content">${escapeHtml(conv.content)}</div>
+                        <div class="conversation-content">${contentText}</div>
                         ${imageHtml}
                     </div>
                 `;
