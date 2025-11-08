@@ -163,6 +163,10 @@ fn verify_webhook_signature(payload: &str, signature: &str, secret: &str) -> boo
     expected_signature == provided_signature
 }
 
+// Admin dashboard module
+#[cfg(feature = "webhook-server")]
+pub mod admin;
+
 // Axum integration (optional - requires axum dependency)
 #[cfg(feature = "webhook-server")]
 pub mod server {

@@ -13,7 +13,7 @@ use std::env;
 use std::sync::Arc;
 
 use handlers::{MessageHandler, ReminderService};
-use services::{Database, BirdComClient, OpenRouterService};
+use services::{Database, BirdComClient, OpenRouterService, AdminService};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -70,13 +70,28 @@ async fn main() -> Result<()> {
     reminder_service.start().await?;
     log::info!("✅ Reminder service started");
 
-    // Start webhook server
+    // Start webhook server with admin dashboard
     #[cfg(feature = "webhook-server")]
     {
+        use webhook::admin::create_admin_router;
+
         let webhook_addr = "0.0.0.0:8080";
-        let webhook_app = create_webhook_router(message_handler.clone(), bird_client.clone());
+        let mut webhook_app = create_webhook_router(message_handler.clone(), bird_client.clone());
+
+        // Add admin dashboard routes with token authentication
+        let admin_token = env::var("ADMIN_TOKEN")
+            .unwrap_or_else(|_| {
+                log::warn!("⚠️ ADMIN_TOKEN not set, using default 'admin123' (INSECURE!)");
+                "admin123".to_string()
+            });
+
+        let admin_service = Arc::new(AdminService::new(db.clone()));
+        let admin_router = create_admin_router(admin_service, admin_token.clone());
+
+        webhook_app = webhook_app.nest("/admin", admin_router);
 
         log::info!("🌐 Webhook server starting on {}", webhook_addr);
+        log::info!("🔐 Admin dashboard: http://localhost:8080/admin?token={}", admin_token);
 
         tokio::spawn(async move {
             let listener = tokio::net::TcpListener::bind(webhook_addr)
@@ -95,6 +110,12 @@ async fn main() -> Result<()> {
     println!("\n📱 Bot çalışıyor!");
     println!("📞 WhatsApp Numarası: +1 302-726-0990");
     println!("🌐 Webhook Server: http://localhost:8080");
+    #[cfg(feature = "webhook-server")]
+    {
+        let admin_url = format!("http://localhost:8080/admin?token={}",
+            env::var("ADMIN_TOKEN").unwrap_or_else(|_| "admin123".to_string()));
+        println!("🔐 Admin Dashboard: {}", admin_url);
+    }
     println!("⏰ Hatırlatma servisi aktif");
     println!("\n💬 WhatsApp'tan mesaj gönderin:");
     println!("   'Merhaba' - Hoşgeldin mesajı");
