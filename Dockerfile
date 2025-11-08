@@ -16,6 +16,9 @@ COPY Cargo.toml Cargo.lock ./
 # Copy source code
 COPY src ./src
 
+# Copy static files (needed for admin dashboard HTML)
+COPY static ./static
+
 # Build the application
 RUN cargo build --release
 

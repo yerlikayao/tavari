@@ -50,7 +50,9 @@ async fn admin_dashboard_page(
     Query(query): Query<AuthQuery>,
     State(state): State<AdminState>,
 ) -> Result<Html<String>, StatusCode> {
+    log::info!("Admin dashboard access attempt with token: {}...", &query.token[..query.token.len().min(8)]);
     verify_token(&query, &state.admin_token)?;
+    log::info!("Admin dashboard access granted");
 
     let html = include_str!("../../static/admin_dashboard.html");
     Ok(Html(html.to_string()))
