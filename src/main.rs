@@ -90,9 +90,11 @@ async fn main() -> Result<()> {
 
         webhook_app = webhook_app.nest("/admin", admin_router);
 
-        // Serve static images
+        // Serve static images (use absolute path for Docker)
         use tower_http::services::ServeDir;
-        webhook_app = webhook_app.nest_service("/images", ServeDir::new("./data/images"));
+        let image_dir = std::env::var("IMAGE_DIR").unwrap_or_else(|_| "/app/data/images".to_string());
+        log::info!("📁 Serving images from: {}", image_dir);
+        webhook_app = webhook_app.nest_service("/images", ServeDir::new(&image_dir));
 
         log::info!("🌐 Webhook server starting on {}", webhook_addr);
         log::info!("🔐 Admin dashboard: http://localhost:8080/admin?token={}", admin_token);

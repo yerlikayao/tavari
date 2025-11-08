@@ -81,21 +81,43 @@ pub async fn handle_bird_webhook(
                 if let Some(first_image) = image.images.first() {
                     log::info!("📸 Image message from {}: mediaUrl={}", from, first_image.media_url);
 
-                    // Generate output path
+                    // Generate output path - use absolute path from /app
+                    let data_dir = "/app/data/images";
                     let filename = format!(
-                        "./data/images/img_{}.jpg",
+                        "{}/img_{}.jpg",
+                        data_dir,
                         chrono::Utc::now().timestamp()
                     );
 
                     // Create directory if not exists
-                    log::debug!("📁 Creating directory: ./data/images");
-                    if let Err(e) = std::fs::create_dir_all("./data/images") {
-                        log::error!("❌ Failed to create directory ./data/images: {}", e);
+                    log::info!("📁 Ensuring directory exists: {}", data_dir);
+                    if let Err(e) = std::fs::create_dir_all(data_dir) {
+                        log::error!("❌ Failed to create directory {}: {}", data_dir, e);
                         log::error!("   Current directory: {:?}", std::env::current_dir());
                         log::error!("   Error kind: {:?}", e.kind());
+
+                        // Check parent directory permissions
+                        if let Ok(metadata) = std::fs::metadata("/app/data") {
+                            log::error!("   /app/data permissions: readonly={}, is_dir={}",
+                                metadata.permissions().readonly(), metadata.is_dir());
+                        } else {
+                            log::error!("   /app/data directory does not exist!");
+                        }
+
                         return Err(e.into());
                     }
-                    log::debug!("✅ Directory exists: ./data/images");
+
+                    // Verify directory permissions
+                    match std::fs::metadata(data_dir) {
+                        Ok(metadata) => {
+                            log::info!("✅ Directory {} exists - readonly={}, is_dir={}",
+                                data_dir, metadata.permissions().readonly(), metadata.is_dir());
+                        }
+                        Err(e) => {
+                            log::error!("❌ Cannot access {}: {}", data_dir, e);
+                            return Err(e.into());
+                        }
+                    }
 
                     // Download directly from mediaUrl with AccessKey authentication (redirects enabled)
                     let client = reqwest::Client::builder()
@@ -112,19 +134,45 @@ pub async fn handle_bird_webhook(
                     }
 
                     let bytes = response.bytes().await?;
-                    log::debug!("💾 Writing {} bytes to: {}", bytes.len(), filename);
-                    if let Err(e) = std::fs::write(&filename, bytes) {
+                    log::info!("💾 Writing {} bytes to: {}", bytes.len(), filename);
+
+                    // Try to write the file
+                    if let Err(e) = std::fs::write(&filename, &bytes) {
                         log::error!("❌ Failed to write file {}: {}", filename, e);
                         log::error!("   Error kind: {:?}", e.kind());
+                        log::error!("   Bytes to write: {}", bytes.len());
 
-                        // Check directory permissions
+                        // Check directory permissions again
                         if let Ok(metadata) = std::fs::metadata("./data/images") {
                             log::error!("   Directory metadata: readonly={}, is_dir={}",
                                 metadata.permissions().readonly(), metadata.is_dir());
                         }
+
+                        // Try to list files in directory
+                        match std::fs::read_dir(data_dir) {
+                            Ok(entries) => {
+                                log::error!("   Files in {}:", data_dir);
+                                for entry in entries.flatten() {
+                                    log::error!("     - {:?}", entry.path());
+                                }
+                            }
+                            Err(e) => {
+                                log::error!("   Cannot read directory: {}", e);
+                            }
+                        }
+
                         return Err(e.into());
                     }
-                    log::info!("✅ Image downloaded from mediaUrl: {}", filename);
+
+                    // Verify file was written
+                    match std::fs::metadata(&filename) {
+                        Ok(metadata) => {
+                            log::info!("✅ Image saved successfully: {} ({} bytes)", filename, metadata.len());
+                        }
+                        Err(e) => {
+                            log::error!("❌ File written but cannot verify: {}", e);
+                        }
+                    }
 
                     // Handle with caption if present
                     let caption = image.caption.as_deref().unwrap_or("");

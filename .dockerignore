@@ -1,0 +1,30 @@
+# Development files
+target/
+.env
+.env.local
+
+# Data directories (should be volume-mounted, not copied into image)
+data/
+*.db
+*.sqlite
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+*.md
+!README.md
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
