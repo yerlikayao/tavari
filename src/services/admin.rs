@@ -39,9 +39,13 @@ impl AdminService {
     pub async fn get_all_user_stats(&self) -> Result<Vec<UserStats>> {
         let users = self.db.get_all_users().await?;
         let mut stats = Vec::new();
-        let today = chrono::Utc::now().date_naive();
 
         for user in users {
+            // Use user's timezone for accurate "today" calculation
+            let user_tz: chrono_tz::Tz = user.timezone.parse()
+                .unwrap_or(chrono_tz::Europe::Istanbul);
+            let today = chrono::Utc::now().with_timezone(&user_tz).date_naive();
+
             let total_meals = self.get_user_total_meals(&user.phone_number).await?;
             let total_conversations = self.db.get_conversation_count(&user.phone_number).await?;
             let daily_stats = self.db.get_daily_stats(&user.phone_number, today).await?;
@@ -104,11 +108,15 @@ impl AdminService {
 
     /// Get total meals logged today across all users
     async fn get_total_meals_today(&self) -> Result<i64> {
-        let today = chrono::Utc::now().date_naive();
         let users = self.db.get_all_users().await?;
 
         let mut total = 0i64;
         for user in users {
+            // Use user's timezone for accurate "today" calculation
+            let user_tz: chrono_tz::Tz = user.timezone.parse()
+                .unwrap_or(chrono_tz::Europe::Istanbul);
+            let today = chrono::Utc::now().with_timezone(&user_tz).date_naive();
+
             let daily_stats = self.db.get_daily_stats(&user.phone_number, today).await?;
             total += daily_stats.meals_count;
         }
