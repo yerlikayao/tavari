@@ -83,6 +83,12 @@ impl MessageHandler {
         // Kullanıcı bilgilerini al
         let user = self.db.get_user(from).await?.ok_or_else(|| anyhow::anyhow!("User not found"))?;
 
+        // Kullanıcı deaktif ise, mesajı işleme ama yanıt verme
+        if !user.is_active {
+            log::warn!("⚠️ User {} is inactive, ignoring message", from);
+            return Ok(());
+        }
+
         // Onboarding tamamlanmamışsa, onboarding handler'a yönlendir
         if !user.onboarding_completed {
             log::info!("👤 User {} in onboarding phase (step: {:?})", from, user.onboarding_step);
@@ -143,6 +149,7 @@ impl MessageHandler {
                 daily_calorie_goal: Some(2000),  // Varsayılan: 2000 kcal
                 silent_hours_start: Some("23:00".to_string()),  // Varsayılan: 23:00
                 silent_hours_end: Some("07:00".to_string()),    // Varsayılan: 07:00
+                is_active: true,  // Varsayılan: aktif
             };
             self.db.create_user(&user).await?;
             log::info!("✅ New user created: {}", phone);

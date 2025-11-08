@@ -21,6 +21,7 @@ pub struct User {
     pub daily_calorie_goal: Option<i32>,  // Günlük kalori hedefi (kcal cinsinden, varsayılan: 2000)
     pub silent_hours_start: Option<String>,  // Sessiz saatler başlangıcı (HH:MM, varsayılan: "23:00")
     pub silent_hours_end: Option<String>,    // Sessiz saatler bitişi (HH:MM, varsayılan: "07:00")
+    pub is_active: bool,  // Kullanıcı aktif mi? (false ise sistem ona mesaj atmaz)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -79,9 +79,8 @@ impl AdminService {
             })
             .count() as i64;
 
-        let total_meals_today: i64 = user_stats.iter().map(|s| {
-            if s.total_calories_today > 0.0 { 1 } else { 0 }
-        }).sum();
+        // Count total meals logged today across all users
+        let total_meals_today: i64 = self.get_total_meals_today().await?;
 
         let total_conversations_today = user_stats
             .iter()
@@ -95,6 +94,20 @@ impl AdminService {
             total_conversations_today,
             users: user_stats,
         })
+    }
+
+    /// Get total meals logged today across all users
+    async fn get_total_meals_today(&self) -> Result<i64> {
+        let today = chrono::Utc::now().date_naive();
+
+        // Sum up meals_count from each user's daily stats
+        let mut total = 0i64;
+        for user_stat in &(self.get_all_user_stats().await?) {
+            let daily_stats = self.db.get_daily_stats(&user_stat.user.phone_number, today).await?;
+            total += daily_stats.meals_count;
+        }
+
+        Ok(total)
     }
 
     /// Get specific user's meals
@@ -118,5 +131,10 @@ impl AdminService {
     async fn get_user_last_activity(&self, phone_number: &str) -> Result<Option<DateTime<Utc>>> {
         let conversations = self.db.get_conversation_history(phone_number, 1).await?;
         Ok(conversations.first().map(|c| c.created_at))
+    }
+
+    /// Toggle user active status
+    pub async fn toggle_user_active(&self, phone_number: &str) -> Result<bool> {
+        self.db.toggle_user_active(phone_number).await
     }
 }

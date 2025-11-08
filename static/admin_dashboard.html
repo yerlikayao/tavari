@@ -75,6 +75,26 @@
             font-weight: bold;
         }
 
+        .search-box {
+            padding: 20px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 12px 20px;
+            font-size: 1rem;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
         .user-list {
             display: grid;
             gap: 15px;
@@ -102,10 +122,41 @@
             margin-bottom: 15px;
         }
 
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
         .phone-number {
             font-size: 1.2rem;
             font-weight: bold;
             color: #333;
+        }
+
+        .status-badge {
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: none;
+            outline: none;
+        }
+
+        .status-badge:hover {
+            opacity: 0.8;
+        }
+
+        .status-badge.active {
+            background: #4caf50;
+            color: white;
+        }
+
+        .status-badge.inactive {
+            background: #f44336;
+            color: white;
         }
 
         .last-activity {
@@ -261,6 +312,31 @@
             line-height: 1.5;
         }
 
+        .conversation-image {
+            margin-top: 10px;
+        }
+
+        .conversation-image img {
+            max-width: 300px;
+            width: 100%;
+            height: auto;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+
+        .conversation-image img:hover {
+            transform: scale(1.02);
+        }
+
+        .conversation-image-path {
+            font-size: 0.75rem;
+            color: #999;
+            margin-top: 5px;
+            font-style: italic;
+        }
+
         .meal-item {
             padding: 15px;
             margin-bottom: 10px;
@@ -325,6 +401,10 @@
             .user-stats {
                 grid-template-columns: repeat(2, 1fr);
             }
+
+            .conversation-image img {
+                max-width: 100%;
+            }
         }
     </style>
 </head>
@@ -353,6 +433,15 @@
 
         <div class="users-section">
             <div class="section-header">👥 Kullanıcılar</div>
+            <div class="search-box">
+                <input
+                    type="text"
+                    id="searchInput"
+                    class="search-input"
+                    placeholder="Kullanıcı telefon numarası ile ara..."
+                    onkeyup="filterUsers()"
+                >
+            </div>
             <div class="user-list" id="userList">
                 <div class="loading">Yükleniyor...</div>
             </div>
@@ -396,6 +485,7 @@
         }
 
         let currentUserPhone = null;
+        let allUsers = []; // Store all users for filtering
 
         // Load dashboard data
         async function loadDashboard() {
@@ -410,6 +500,7 @@
                 document.getElementById('mealsToday').textContent = data.total_meals_today;
                 document.getElementById('conversationsToday').textContent = data.total_conversations_today;
 
+                allUsers = data.users; // Store all users
                 renderUsers(data.users);
             } catch (error) {
                 console.error('Error loading dashboard:', error);
@@ -418,12 +509,49 @@
             }
         }
 
+        // Filter users based on search input
+        function filterUsers() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            const filteredUsers = allUsers.filter(userStat =>
+                userStat.user.phone_number.toLowerCase().includes(searchTerm)
+            );
+            renderUsers(filteredUsers);
+        }
+
+        // Toggle user active status
+        async function toggleUserStatus(phone, event) {
+            event.stopPropagation(); // Prevent opening the modal
+
+            try {
+                const response = await fetch(`/admin/api/users/${encodeURIComponent(phone)}/toggle-active?token=${token}`, {
+                    method: 'POST'
+                });
+
+                if (!response.ok) throw new Error('Failed to toggle user status');
+
+                const result = await response.json();
+
+                // Update the user's status in allUsers array
+                const userIndex = allUsers.findIndex(u => u.user.phone_number === phone);
+                if (userIndex !== -1) {
+                    allUsers[userIndex].user.is_active = result.is_active;
+                }
+
+                // Re-render users with current filter
+                filterUsers();
+
+            } catch (error) {
+                console.error('Error toggling user status:', error);
+                alert('Kullanıcı durumu değiştirilemedi.');
+            }
+        }
+
         // Render users list
         function renderUsers(users) {
             const userList = document.getElementById('userList');
 
             if (users.length === 0) {
-                userList.innerHTML = '<div class="loading">Henüz kullanıcı yok.</div>';
+                userList.innerHTML = '<div class="loading">Kullanıcı bulunamadı.</div>';
                 return;
             }
 
@@ -432,10 +560,22 @@
                     ? new Date(userStat.last_activity).toLocaleString('tr-TR')
                     : 'Hiç aktivite yok';
 
+                const isActive = userStat.user.is_active !== undefined ? userStat.user.is_active : true;
+                const statusClass = isActive ? 'active' : 'inactive';
+                const statusText = isActive ? 'Aktif' : 'Deaktif';
+
                 return `
                     <div class="user-card" onclick="openUserModal('${userStat.user.phone_number}')">
                         <div class="user-header">
-                            <div class="phone-number">${userStat.user.phone_number}</div>
+                            <div class="user-info">
+                                <div class="phone-number">${userStat.user.phone_number}</div>
+                                <button
+                                    class="status-badge ${statusClass}"
+                                    onclick="toggleUserStatus('${userStat.user.phone_number}', event)"
+                                >
+                                    ${statusText}
+                                </button>
+                            </div>
                             <div class="last-activity">${lastActivity}</div>
                         </div>
                         <div class="user-stats">
@@ -449,11 +589,11 @@
                             </div>
                             <div class="user-stat">
                                 <div class="user-stat-label">Bugün Kalori</div>
-                                <div class="user-stat-value">${Math.round(userStat.total_calories_today)}</div>
+                                <div class="user-stat-value">${userStat.total_calories_today !== undefined && userStat.total_calories_today !== null ? Math.round(userStat.total_calories_today) : 0}</div>
                             </div>
                             <div class="user-stat">
                                 <div class="user-stat-label">Bugün Su (ml)</div>
-                                <div class="user-stat-value">${userStat.total_water_today}</div>
+                                <div class="user-stat-value">${userStat.total_water_today !== undefined && userStat.total_water_today !== null ? userStat.total_water_today : 0}</div>
                             </div>
                         </div>
                     </div>
@@ -520,6 +660,17 @@
                     const directionClass = conv.direction.toLowerCase();
                     const directionLabel = conv.direction === 'incoming' ? 'Gelen' : 'Giden';
 
+                    // Check if metadata contains image_path
+                    let imageHtml = '';
+                    if (conv.metadata && conv.metadata.image_path) {
+                        imageHtml = `
+                            <div class="conversation-image">
+                                <img src="${conv.metadata.image_path}" alt="Gönderilen görsel" onclick="window.open('${conv.metadata.image_path}', '_blank')">
+                                <div class="conversation-image-path">${conv.metadata.image_path}</div>
+                            </div>
+                        `;
+                    }
+
                     return `
                         <div class="conversation-item ${directionClass}">
                             <div class="conversation-meta">
@@ -527,6 +678,7 @@
                                 <span>${date}</span>
                             </div>
                             <div class="conversation-content">${conv.content}</div>
+                            ${imageHtml}
                         </div>
                     `;
                 }).join('');

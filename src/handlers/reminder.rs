@@ -52,7 +52,7 @@ impl ReminderService {
                 use chrono::Timelike;
                 use chrono_tz::Tz;
 
-                if let Ok(users) = db.get_all_users().await {
+                if let Ok(users) = db.get_active_users().await {
                     log::debug!("🔄 Meal reminder check running for {} users", users.len());
                     for user in users {
                         if !user.onboarding_completed {
@@ -175,7 +175,7 @@ impl ReminderService {
 
                 let message = "💧 *Su içme zamanı!*\n\nEn az 1 bardak su iç.\nKaydet: 250 ml su içtim";
 
-                if let Ok(users) = db.get_all_users().await {
+                if let Ok(users) = db.get_active_users().await {
                     log::debug!("💧 Water reminder check running for {} users", users.len());
                     for user in users {
                         if user.water_reminder && user.onboarding_completed {
@@ -245,7 +245,7 @@ impl ReminderService {
                 use chrono::Timelike;
                 use chrono_tz::Tz;
 
-                if let Ok(users) = db.get_all_users().await {
+                if let Ok(users) = db.get_active_users().await {
                     log::debug!("📊 Daily summary check running for {} users", users.len());
                     for user in users {
                         if !user.onboarding_completed {

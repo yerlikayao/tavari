@@ -2,7 +2,7 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     response::{Html, IntoResponse},
-    routing::get,
+    routing::{get, post},
     Router,
 };
 use serde::Deserialize;
@@ -33,6 +33,7 @@ pub fn create_admin_router(admin_service: Arc<AdminService>, admin_token: String
         .route("/api/dashboard", get(get_dashboard_data))
         .route("/api/users/:phone/meals", get(get_user_meals))
         .route("/api/users/:phone/conversations", get(get_user_conversations))
+        .route("/api/users/:phone/toggle-active", post(toggle_user_active))
         .with_state(state)
 }
 
@@ -115,4 +116,28 @@ async fn get_user_conversations(
         })?;
 
     Ok((StatusCode::OK, axum::Json(conversations)))
+}
+
+/// Toggle user active status
+async fn toggle_user_active(
+    Path(phone): Path<String>,
+    Query(query): Query<AuthQuery>,
+    State(state): State<AdminState>,
+) -> Result<impl IntoResponse, StatusCode> {
+    verify_token(&query, &state.admin_token)?;
+
+    let new_status = state
+        .admin_service
+        .toggle_user_active(&phone)
+        .await
+        .map_err(|e| {
+            log::error!("Failed to toggle user active status: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    log::info!("User {} active status toggled to: {}", phone, new_status);
+
+    Ok((StatusCode::OK, axum::Json(serde_json::json!({
+        "is_active": new_status
+    }))))
 }

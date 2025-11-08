@@ -38,7 +38,8 @@ impl Database {
                 opted_in BOOLEAN DEFAULT FALSE,
                 timezone TEXT DEFAULT 'Europe/Istanbul',
                 water_reminder_interval INTEGER DEFAULT 120,
-                daily_water_goal INTEGER DEFAULT 2000
+                daily_water_goal INTEGER DEFAULT 2000,
+                is_active BOOLEAN DEFAULT TRUE
             )
             "#,
         )
@@ -161,6 +162,14 @@ impl Database {
                 ) THEN
                     ALTER TABLE users ADD COLUMN silent_hours_end TEXT DEFAULT '07:00';
                 END IF;
+
+                -- Add is_active column if not exists
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name='users' AND column_name='is_active'
+                ) THEN
+                    ALTER TABLE users ADD COLUMN is_active BOOLEAN DEFAULT TRUE;
+                END IF;
             END $$;
             "#,
         )
@@ -188,6 +197,10 @@ impl Database {
             .execute(&self.pool)
             .await?;
 
+        sqlx::query("UPDATE users SET is_active = TRUE WHERE is_active IS NULL")
+            .execute(&self.pool)
+            .await?;
+
         Ok(())
     }
 
@@ -199,8 +212,8 @@ impl Database {
                 breakfast_reminder, lunch_reminder, dinner_reminder, water_reminder,
                 breakfast_time, lunch_time, dinner_time, opted_in, timezone,
                 water_reminder_interval, daily_water_goal, daily_calorie_goal,
-                silent_hours_start, silent_hours_end
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+                silent_hours_start, silent_hours_end, is_active
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
             ON CONFLICT (phone_number) DO NOTHING
             "#,
         )
@@ -222,6 +235,7 @@ impl Database {
         .bind(user.daily_calorie_goal)
         .bind(&user.silent_hours_start)
         .bind(&user.silent_hours_end)
+        .bind(user.is_active)
         .execute(&self.pool)
         .await?;
 
@@ -235,7 +249,7 @@ impl Database {
                    breakfast_reminder, lunch_reminder, dinner_reminder, water_reminder,
                    breakfast_time, lunch_time, dinner_time, opted_in, timezone,
                    water_reminder_interval, daily_water_goal, daily_calorie_goal,
-                   silent_hours_start, silent_hours_end
+                   silent_hours_start, silent_hours_end, is_active
             FROM users WHERE phone_number = $1
             "#,
         )
@@ -261,6 +275,7 @@ impl Database {
             daily_calorie_goal: row.get(15),
             silent_hours_start: row.get(16),
             silent_hours_end: row.get(17),
+            is_active: row.get(18),
         });
 
         Ok(user)
@@ -273,7 +288,7 @@ impl Database {
                    breakfast_reminder, lunch_reminder, dinner_reminder, water_reminder,
                    breakfast_time, lunch_time, dinner_time, opted_in, timezone,
                    water_reminder_interval, daily_water_goal, daily_calorie_goal,
-                   silent_hours_start, silent_hours_end
+                   silent_hours_start, silent_hours_end, is_active
             FROM users
             "#,
         )
@@ -301,6 +316,7 @@ impl Database {
                 daily_calorie_goal: row.get(15),
                 silent_hours_start: row.get(16),
                 silent_hours_end: row.get(17),
+                is_active: row.get(18),
             })
             .collect();
 
@@ -813,5 +829,74 @@ impl Database {
 
         let count: i64 = result.get::<i64, _>(0);
         Ok(count)
+    }
+
+    /// Toggle user active status
+    pub async fn toggle_user_active(&self, phone_number: &str) -> Result<bool> {
+        // Get current status
+        let current = sqlx::query(
+            "SELECT is_active FROM users WHERE phone_number = $1"
+        )
+        .bind(phone_number)
+        .fetch_one(&self.pool)
+        .await?;
+
+        let current_status: bool = current.get(0);
+        let new_status = !current_status;
+
+        // Update status
+        sqlx::query(
+            "UPDATE users SET is_active = $1 WHERE phone_number = $2"
+        )
+        .bind(new_status)
+        .bind(phone_number)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(new_status)
+    }
+
+    /// Get only active users (for reminders)
+    pub async fn get_active_users(&self) -> Result<Vec<User>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT phone_number, created_at, onboarding_completed, onboarding_step,
+                   breakfast_reminder, lunch_reminder, dinner_reminder, water_reminder,
+                   breakfast_time, lunch_time, dinner_time, opted_in, timezone,
+                   water_reminder_interval, daily_water_goal, daily_calorie_goal,
+                   silent_hours_start, silent_hours_end, is_active
+            FROM users
+            WHERE is_active = TRUE
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let users = rows
+            .into_iter()
+            .map(|row| User {
+                phone_number: row.get(0),
+                created_at: row.get(1),
+                onboarding_completed: row.get(2),
+                onboarding_step: row.get(3),
+                breakfast_reminder: row.get(4),
+                lunch_reminder: row.get(5),
+                dinner_reminder: row.get(6),
+                water_reminder: row.get(7),
+                breakfast_time: row.get(8),
+                lunch_time: row.get(9),
+                dinner_time: row.get(10),
+                opted_in: row.get(11),
+                timezone: row.get(12),
+                water_reminder_interval: row.get(13),
+                daily_water_goal: row.get(14),
+                daily_calorie_goal: row.get(15),
+                silent_hours_start: row.get(16),
+                silent_hours_end: row.get(17),
+                is_active: row.get(18),
+            })
+            .collect();
+
+        Ok(users)
     }
 }
