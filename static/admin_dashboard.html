@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Dashboard - WhatsApp Nutrition Bot</title>
+    <title>Admin Dashboard - Tavari Nutrition Bot</title>
     <style>
         * {
             margin: 0;
@@ -31,6 +31,7 @@
             text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
         }
 
+        /* Stats Grid */
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -60,6 +61,7 @@
             color: #333;
         }
 
+        /* Users Section */
         .users-section {
             background: white;
             border-radius: 12px;
@@ -99,6 +101,8 @@
             display: grid;
             gap: 15px;
             padding: 20px;
+            max-height: 800px;
+            overflow-y: auto;
         }
 
         .user-card {
@@ -120,12 +124,15 @@
             justify-content: space-between;
             align-items: center;
             margin-bottom: 15px;
+            flex-wrap: wrap;
+            gap: 10px;
         }
 
         .user-info {
             display: flex;
             align-items: center;
             gap: 15px;
+            flex-wrap: wrap;
         }
 
         .phone-number {
@@ -147,6 +154,7 @@
 
         .status-badge:hover {
             opacity: 0.8;
+            transform: scale(1.05);
         }
 
         .status-badge.active {
@@ -190,6 +198,7 @@
             color: #667eea;
         }
 
+        /* Modal */
         .modal {
             display: none;
             position: fixed;
@@ -226,6 +235,9 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 10;
         }
 
         .modal-header h2 {
@@ -244,11 +256,20 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            transition: transform 0.2s;
+        }
+
+        .close-btn:hover {
+            transform: scale(1.2);
         }
 
         .modal-tabs {
             display: flex;
             border-bottom: 2px solid #e0e0e0;
+            position: sticky;
+            top: 68px;
+            background: white;
+            z-index: 9;
         }
 
         .tab {
@@ -268,6 +289,10 @@
             border-bottom: 3px solid #667eea;
         }
 
+        .tab:hover {
+            background: #f5f5f5;
+        }
+
         .tab-content {
             padding: 20px;
             display: none;
@@ -277,6 +302,7 @@
             display: block;
         }
 
+        /* Conversations */
         .conversation-item {
             padding: 15px;
             margin-bottom: 10px;
@@ -300,6 +326,8 @@
             margin-bottom: 8px;
             font-size: 0.85rem;
             color: #666;
+            flex-wrap: wrap;
+            gap: 10px;
         }
 
         .conversation-type {
@@ -310,6 +338,7 @@
         .conversation-content {
             color: #333;
             line-height: 1.5;
+            word-break: break-word;
         }
 
         .conversation-image {
@@ -337,6 +366,7 @@
             font-style: italic;
         }
 
+        /* Meals */
         .meal-item {
             padding: 15px;
             margin-bottom: 10px;
@@ -350,6 +380,8 @@
             justify-content: space-between;
             align-items: center;
             margin-bottom: 10px;
+            flex-wrap: wrap;
+            gap: 10px;
         }
 
         .meal-type {
@@ -367,14 +399,15 @@
         .meal-description {
             color: #666;
             line-height: 1.5;
+            margin-bottom: 8px;
         }
 
         .meal-date {
             font-size: 0.85rem;
             color: #999;
-            margin-top: 8px;
         }
 
+        /* Loading & Error States */
         .loading {
             text-align: center;
             padding: 40px;
@@ -389,6 +422,13 @@
             margin: 20px;
         }
 
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+
+        /* Responsive */
         @media (max-width: 768px) {
             h1 {
                 font-size: 1.8rem;
@@ -404,6 +444,10 @@
 
             .conversation-image img {
                 max-width: 100%;
+            }
+
+            .modal-content {
+                max-height: 95vh;
             }
         }
     </style>
@@ -439,7 +483,6 @@
                     id="searchInput"
                     class="search-input"
                     placeholder="Kullanıcı telefon numarası ile ara..."
-                    onkeyup="filterUsers()"
                 >
             </div>
             <div class="user-list" id="userList">
@@ -457,8 +500,8 @@
             </div>
 
             <div class="modal-tabs">
-                <button class="tab active" onclick="switchTab('conversations')">💬 Mesajlar</button>
-                <button class="tab" onclick="switchTab('meals')">🍽️ Yemekler</button>
+                <button class="tab active" data-tab="conversations">💬 Mesajlar</button>
+                <button class="tab" data-tab="meals">🍽️ Yemekler</button>
             </div>
 
             <div class="tab-content active" id="conversationsTab">
@@ -476,82 +519,90 @@
     </div>
 
     <script>
-        const urlParams = new URLSearchParams(window.location.search);
-        const token = urlParams.get('token');
+        // Global State
+        const STATE = {
+            token: null,
+            currentUserPhone: null,
+            allUsers: [],
+            currentTab: 'conversations'
+        };
 
-        if (!token) {
-            document.body.innerHTML = '<div class="error">Yetkisiz erişim. Token gerekli.</div>';
-            throw new Error('Token required');
+        // Initialize
+        (function init() {
+            const urlParams = new URLSearchParams(window.location.search);
+            STATE.token = urlParams.get('token');
+
+            if (!STATE.token) {
+                document.body.innerHTML = '<div class="error">❌ Yetkisiz erişim. Token gerekli.</div>';
+                return;
+            }
+
+            // Setup event listeners
+            document.getElementById('searchInput').addEventListener('input', filterUsers);
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.addEventListener('click', () => switchTab(tab.dataset.tab));
+            });
+
+            // Load initial data
+            loadDashboard();
+
+            // Auto refresh every 30 seconds
+            setInterval(loadDashboard, 30000);
+        })();
+
+        // API Functions
+        async function apiCall(endpoint) {
+            const response = await fetch(`/admin/api/${endpoint}?token=${STATE.token}`);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
         }
 
-        let currentUserPhone = null;
-        let allUsers = []; // Store all users for filtering
+        async function apiPost(endpoint) {
+            const response = await fetch(`/admin/api/${endpoint}?token=${STATE.token}`, {
+                method: 'POST'
+            });
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        }
 
-        // Load dashboard data
+        // Load Dashboard Data
         async function loadDashboard() {
             try {
-                const response = await fetch(`/admin/api/dashboard?token=${token}`);
-                if (!response.ok) throw new Error('Failed to load dashboard');
-
-                const data = await response.json();
+                const data = await apiCall('dashboard');
 
                 document.getElementById('totalUsers').textContent = data.total_users;
                 document.getElementById('activeToday').textContent = data.active_users_today;
                 document.getElementById('mealsToday').textContent = data.total_meals_today;
                 document.getElementById('conversationsToday').textContent = data.total_conversations_today;
 
-                allUsers = data.users; // Store all users
-                renderUsers(data.users);
+                STATE.allUsers = data.users;
+                renderUsers(STATE.allUsers);
             } catch (error) {
                 console.error('Error loading dashboard:', error);
                 document.getElementById('userList').innerHTML =
-                    '<div class="error">Veri yüklenirken hata oluştu.</div>';
+                    `<div class="error">❌ Veri yüklenirken hata oluştu: ${error.message}</div>`;
             }
         }
 
-        // Filter users based on search input
+        // Filter Users
         function filterUsers() {
             const searchTerm = document.getElementById('searchInput').value.toLowerCase();
-            const filteredUsers = allUsers.filter(userStat =>
+            const filteredUsers = STATE.allUsers.filter(userStat =>
                 userStat.user.phone_number.toLowerCase().includes(searchTerm)
             );
             renderUsers(filteredUsers);
         }
 
-        // Toggle user active status
-        async function toggleUserStatus(phone, event) {
-            event.stopPropagation(); // Prevent opening the modal
-
-            try {
-                const response = await fetch(`/admin/api/users/${encodeURIComponent(phone)}/toggle-active?token=${token}`, {
-                    method: 'POST'
-                });
-
-                if (!response.ok) throw new Error('Failed to toggle user status');
-
-                const result = await response.json();
-
-                // Update the user's status in allUsers array
-                const userIndex = allUsers.findIndex(u => u.user.phone_number === phone);
-                if (userIndex !== -1) {
-                    allUsers[userIndex].user.is_active = result.is_active;
-                }
-
-                // Re-render users with current filter
-                filterUsers();
-
-            } catch (error) {
-                console.error('Error toggling user status:', error);
-                alert('Kullanıcı durumu değiştirilemedi.');
-            }
-        }
-
-        // Render users list
+        // Render Users
         function renderUsers(users) {
             const userList = document.getElementById('userList');
 
             if (users.length === 0) {
-                userList.innerHTML = '<div class="loading">Kullanıcı bulunamadı.</div>';
+                userList.innerHTML = '<div class="empty-state">📭 Kullanıcı bulunamadı</div>';
                 return;
             }
 
@@ -560,9 +611,12 @@
                     ? new Date(userStat.last_activity).toLocaleString('tr-TR')
                     : 'Hiç aktivite yok';
 
-                const isActive = userStat.user.is_active !== undefined ? userStat.user.is_active : true;
+                const isActive = userStat.user.is_active ?? true;
                 const statusClass = isActive ? 'active' : 'inactive';
                 const statusText = isActive ? 'Aktif' : 'Deaktif';
+
+                const totalCalories = Math.round(userStat.total_calories_today ?? 0);
+                const totalWater = userStat.total_water_today ?? 0;
 
                 return `
                     <div class="user-card" onclick="openUserModal('${userStat.user.phone_number}')">
@@ -572,6 +626,7 @@
                                 <button
                                     class="status-badge ${statusClass}"
                                     onclick="toggleUserStatus('${userStat.user.phone_number}', event)"
+                                    title="Durumu değiştirmek için tıklayın"
                                 >
                                     ${statusText}
                                 </button>
@@ -589,11 +644,11 @@
                             </div>
                             <div class="user-stat">
                                 <div class="user-stat-label">Bugün Kalori</div>
-                                <div class="user-stat-value">${userStat.total_calories_today !== undefined && userStat.total_calories_today !== null ? Math.round(userStat.total_calories_today) : 0}</div>
+                                <div class="user-stat-value">${totalCalories}</div>
                             </div>
                             <div class="user-stat">
                                 <div class="user-stat-label">Bugün Su (ml)</div>
-                                <div class="user-stat-value">${userStat.total_water_today !== undefined && userStat.total_water_today !== null ? userStat.total_water_today : 0}</div>
+                                <div class="user-stat-value">${totalWater}</div>
                             </div>
                         </div>
                     </div>
@@ -601,29 +656,60 @@
             }).join('');
         }
 
-        // Open user detail modal
+        // Toggle User Status
+        async function toggleUserStatus(phone, event) {
+            event.stopPropagation();
+
+            if (!confirm(`${phone} kullanıcısının durumunu değiştirmek istediğinizden emin misiniz?`)) {
+                return;
+            }
+
+            try {
+                const result = await apiPost(`users/${encodeURIComponent(phone)}/toggle-active`);
+
+                // Update user in allUsers array
+                const userIndex = STATE.allUsers.findIndex(u => u.user.phone_number === phone);
+                if (userIndex !== -1) {
+                    STATE.allUsers[userIndex].user.is_active = result.is_active;
+                }
+
+                // Re-render with current filter
+                filterUsers();
+
+                alert(`✅ Kullanıcı durumu ${result.is_active ? 'Aktif' : 'Deaktif'} olarak güncellendi`);
+            } catch (error) {
+                console.error('Error toggling user status:', error);
+                alert(`❌ Hata: ${error.message}`);
+            }
+        }
+
+        // Open User Modal
         async function openUserModal(phone) {
-            currentUserPhone = phone;
+            STATE.currentUserPhone = phone;
             document.getElementById('modalUserPhone').textContent = phone;
             document.getElementById('userModal').classList.add('active');
 
-            // Load conversations by default
-            await loadConversations(phone);
+            // Reset to conversations tab
+            switchTab('conversations');
         }
 
-        // Close modal
+        // Close Modal
         function closeModal() {
             document.getElementById('userModal').classList.remove('active');
-            currentUserPhone = null;
+            STATE.currentUserPhone = null;
         }
 
-        // Switch tabs
+        // Switch Tab
         function switchTab(tabName) {
+            STATE.currentTab = tabName;
+
             // Update tab buttons
             document.querySelectorAll('.tab').forEach(tab => {
                 tab.classList.remove('active');
+                if (tab.dataset.tab === tabName) {
+                    tab.classList.add('active');
+                }
             });
-            event.target.classList.add('active');
 
             // Update tab content
             document.querySelectorAll('.tab-content').forEach(content => {
@@ -632,40 +718,42 @@
 
             if (tabName === 'conversations') {
                 document.getElementById('conversationsTab').classList.add('active');
-                loadConversations(currentUserPhone);
+                loadConversations(STATE.currentUserPhone);
             } else if (tabName === 'meals') {
                 document.getElementById('mealsTab').classList.add('active');
-                loadMeals(currentUserPhone);
+                loadMeals(STATE.currentUserPhone);
             }
         }
 
-        // Load conversations
+        // Load Conversations
         async function loadConversations(phone) {
             const list = document.getElementById('conversationsList');
-            list.innerHTML = '<div class="loading">Yükleniyor...</div>';
+            list.innerHTML = '<div class="loading">⏳ Mesajlar yükleniyor...</div>';
 
             try {
-                const response = await fetch(`/admin/api/users/${encodeURIComponent(phone)}/conversations?token=${token}`);
-                if (!response.ok) throw new Error('Failed to load conversations');
-
-                const conversations = await response.json();
+                const conversations = await apiCall(`users/${encodeURIComponent(phone)}/conversations`);
 
                 if (conversations.length === 0) {
-                    list.innerHTML = '<div class="loading">Henüz mesaj yok.</div>';
+                    list.innerHTML = '<div class="empty-state">📭 Henüz mesaj yok</div>';
                     return;
                 }
 
                 list.innerHTML = conversations.map(conv => {
                     const date = new Date(conv.created_at).toLocaleString('tr-TR');
-                    const directionClass = conv.direction.toLowerCase();
+                    const directionClass = (conv.direction || '').toLowerCase();
                     const directionLabel = conv.direction === 'incoming' ? 'Gelen' : 'Giden';
 
-                    // Check if metadata contains image_path
+                    // Check for image
                     let imageHtml = '';
                     if (conv.metadata && conv.metadata.image_path) {
                         imageHtml = `
                             <div class="conversation-image">
-                                <img src="${conv.metadata.image_path}" alt="Gönderilen görsel" onclick="window.open('${conv.metadata.image_path}', '_blank')">
+                                <img
+                                    src="${conv.metadata.image_path}"
+                                    alt="Gönderilen görsel"
+                                    onclick="window.open('${conv.metadata.image_path}', '_blank')"
+                                    loading="lazy"
+                                >
                                 <div class="conversation-image-path">${conv.metadata.image_path}</div>
                             </div>
                         `;
@@ -677,51 +765,56 @@
                                 <span class="conversation-type">${directionLabel} - ${conv.message_type}</span>
                                 <span>${date}</span>
                             </div>
-                            <div class="conversation-content">${conv.content}</div>
+                            <div class="conversation-content">${escapeHtml(conv.content)}</div>
                             ${imageHtml}
                         </div>
                     `;
                 }).join('');
             } catch (error) {
                 console.error('Error loading conversations:', error);
-                list.innerHTML = '<div class="error">Mesajlar yüklenirken hata oluştu.</div>';
+                list.innerHTML = `<div class="error">❌ Mesajlar yüklenirken hata: ${error.message}</div>`;
             }
         }
 
-        // Load meals
+        // Load Meals
         async function loadMeals(phone) {
             const list = document.getElementById('mealsList');
-            list.innerHTML = '<div class="loading">Yükleniyor...</div>';
+            list.innerHTML = '<div class="loading">⏳ Yemekler yükleniyor...</div>';
 
             try {
-                const response = await fetch(`/admin/api/users/${encodeURIComponent(phone)}/meals?token=${token}`);
-                if (!response.ok) throw new Error('Failed to load meals');
-
-                const meals = await response.json();
+                const meals = await apiCall(`users/${encodeURIComponent(phone)}/meals`);
 
                 if (meals.length === 0) {
-                    list.innerHTML = '<div class="loading">Henüz yemek kaydı yok.</div>';
+                    list.innerHTML = '<div class="empty-state">📭 Henüz yemek kaydı yok</div>';
                     return;
                 }
 
                 list.innerHTML = meals.map(meal => {
                     const date = new Date(meal.created_at).toLocaleString('tr-TR');
+                    const calories = Math.round(meal.calories);
 
                     return `
                         <div class="meal-item">
                             <div class="meal-header">
                                 <span class="meal-type">${meal.meal_type}</span>
-                                <span class="meal-calories">${Math.round(meal.calories)} kcal</span>
+                                <span class="meal-calories">${calories} kcal</span>
                             </div>
-                            <div class="meal-description">${meal.description}</div>
-                            <div class="meal-date">${date}</div>
+                            <div class="meal-description">${escapeHtml(meal.description)}</div>
+                            <div class="meal-date">📅 ${date}</div>
                         </div>
                     `;
                 }).join('');
             } catch (error) {
                 console.error('Error loading meals:', error);
-                list.innerHTML = '<div class="error">Yemekler yüklenirken hata oluştu.</div>';
+                list.innerHTML = `<div class="error">❌ Yemekler yüklenirken hata: ${error.message}</div>`;
             }
+        }
+
+        // Utility: Escape HTML
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
 
         // Close modal when clicking outside
@@ -730,12 +823,6 @@
                 closeModal();
             }
         });
-
-        // Initial load
-        loadDashboard();
-
-        // Auto refresh every 30 seconds
-        setInterval(loadDashboard, 30000);
     </script>
 </body>
 </html>

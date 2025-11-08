@@ -39,14 +39,12 @@ impl AdminService {
     pub async fn get_all_user_stats(&self) -> Result<Vec<UserStats>> {
         let users = self.db.get_all_users().await?;
         let mut stats = Vec::new();
+        let today = chrono::Utc::now().date_naive();
 
         for user in users {
             let total_meals = self.get_user_total_meals(&user.phone_number).await?;
             let total_conversations = self.db.get_conversation_count(&user.phone_number).await?;
-
-            let today = chrono::Utc::now().date_naive();
             let daily_stats = self.db.get_daily_stats(&user.phone_number, today).await?;
-
             let last_activity = self.get_user_last_activity(&user.phone_number).await?;
 
             stats.push(UserStats {
@@ -99,11 +97,11 @@ impl AdminService {
     /// Get total meals logged today across all users
     async fn get_total_meals_today(&self) -> Result<i64> {
         let today = chrono::Utc::now().date_naive();
+        let users = self.db.get_all_users().await?;
 
-        // Sum up meals_count from each user's daily stats
         let mut total = 0i64;
-        for user_stat in &(self.get_all_user_stats().await?) {
-            let daily_stats = self.db.get_daily_stats(&user_stat.user.phone_number, today).await?;
+        for user in users {
+            let daily_stats = self.db.get_daily_stats(&user.phone_number, today).await?;
             total += daily_stats.meals_count;
         }
 
