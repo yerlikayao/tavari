@@ -54,11 +54,17 @@ impl MealType {
     }
 
     pub fn from_string(s: &str) -> Option<Self> {
-        match s.to_lowercase().as_str() {
+        // Normalize Turkish characters: İ->i, I->ı before lowercase
+        let normalized = s
+            .replace('İ', "i")
+            .replace('I', "ı")
+            .to_lowercase();
+
+        match normalized.as_str() {
             "kahvaltı" | "breakfast" => Some(MealType::Breakfast),
-            "öğle" | "lunch" => Some(MealType::Lunch),
-            "akşam" | "dinner" => Some(MealType::Dinner),
-            "ara" | "snack" => Some(MealType::Snack),
+            "öğle yemeği" | "öğle" | "lunch" => Some(MealType::Lunch),
+            "akşam yemeği" | "akşam" | "dinner" => Some(MealType::Dinner),
+            "ara öğün" | "ara" | "snack" => Some(MealType::Snack),
             _ => None,
         }
     }
