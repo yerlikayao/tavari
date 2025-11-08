@@ -47,6 +47,14 @@ impl AdminService {
             let daily_stats = self.db.get_daily_stats(&user.phone_number, today).await?;
             let last_activity = self.get_user_last_activity(&user.phone_number).await?;
 
+            log::info!(
+                "📊 Admin Stats for {}: calories={}, water={}, meals_count={}",
+                user.phone_number,
+                daily_stats.total_calories,
+                daily_stats.total_water_ml,
+                daily_stats.meals_count
+            );
+
             stats.push(UserStats {
                 user,
                 total_meals,

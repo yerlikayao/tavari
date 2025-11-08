@@ -30,7 +30,8 @@ services:
       - BIRD_WORKSPACE_ID=${BIRD_WORKSPACE_ID}
       - BIRD_CHANNEL_ID=${BIRD_CHANNEL_ID}
       - BIRD_WEBHOOK_SECRET=${BIRD_WEBHOOK_SECRET}
-      - RUST_LOG=info
+      - ADMIN_TOKEN=${ADMIN_TOKEN}
+      - RUST_LOG=debug
     volumes:
       - ./data:/app/data
     depends_on:

@@ -404,6 +404,16 @@ impl Database {
         let total_water_ml: i64 = result.get::<i64, _>(2);
         let water_logs_count: i64 = result.get::<i64, _>(3);
 
+        log::debug!(
+            "🔍 DB daily_stats for {} on {}: calories={}, water={}ml, meals={}, water_logs={}",
+            user_phone,
+            date_str,
+            total_calories,
+            total_water_ml,
+            meals_count,
+            water_logs_count
+        );
+
         Ok(DailyStats {
             user_phone: user_phone.to_string(),
             date: date_str,
