@@ -952,8 +952,10 @@
                 let imageHtml = '';
 
                 if (meal.image_path) {
+                    // Extract just the filename from the path (e.g., "./data/images/img_123.jpg" -> "img_123.jpg")
+                    const filename = meal.image_path.split('/').pop();
                     const placeholder = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="150" viewBox="0 0 200 150"%3E%3Crect fill="%23f3f4f6" width="200" height="150"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="%236b7280" font-family="sans-serif" font-size="14"%3E📷 Resim bulunamadı%3C/text%3E%3C/svg%3E';
-                    imageHtml = `<img src="/images/${meal.image_path}" class="meal-image-preview" onerror="this.onerror=null; this.src='${placeholder}'; this.style.cursor='default';" onclick="if(this.src.indexOf('data:image') === -1) window.open(this.src, '_blank')">`;
+                    imageHtml = `<img src="/images/${filename}" class="meal-image-preview" onerror="this.onerror=null; this.src='${placeholder}'; this.style.cursor='default';" onclick="if(this.src.indexOf('data:image') === -1) window.open(this.src, '_blank')">`;
                 }
 
                 return `

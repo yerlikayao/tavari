@@ -31,7 +31,7 @@ services:
       - BIRD_CHANNEL_ID=${BIRD_CHANNEL_ID}
       - BIRD_WEBHOOK_SECRET=${BIRD_WEBHOOK_SECRET}
       - ADMIN_TOKEN=${ADMIN_TOKEN}
-      - RUST_LOG=debug
+      - RUST_LOG=${RUST_LOG}
     volumes:
       - ./data:/app/data
     depends_on:
