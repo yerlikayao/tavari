@@ -26,10 +26,11 @@ hex = "0.4"
 # Optional: Webhook server (uncomment to enable)
 axum = { version = "0.7", optional = true }
 tower = { version = "0.4", optional = true }
+tower-http = { version = "0.5", features = ["fs"], optional = true }
 
 [features]
 default = ["webhook-server"]
-webhook-server = ["axum", "tower"]
+webhook-server = ["axum", "tower", "tower-http"]
 
 # WhatsApp için alternatif: whatsappweb-rs veya kendi API wrapper'ımız
 # Not: Rust için tam özellikli WhatsApp Web library henüz çok olgun değil

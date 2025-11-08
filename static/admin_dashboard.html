@@ -622,6 +622,15 @@
                 <button class="tab-btn" onclick="switchTab('meals')">🍽️ Yemekler</button>
                 <button class="tab-btn" onclick="switchTab('send-message')">📤 Mesaj Gönder</button>
             </div>
+            <div id="timeFilterSection" style="padding: 12px 24px; border-bottom: 1px solid var(--border); display: none; background: var(--bg-light);">
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <button class="filter-btn active" data-time="all" onclick="filterByTime('all')">Tümü</button>
+                    <button class="filter-btn" data-time="today" onclick="filterByTime('today')">Bugün</button>
+                    <button class="filter-btn" data-time="yesterday" onclick="filterByTime('yesterday')">Dün</button>
+                    <button class="filter-btn" data-time="week" onclick="filterByTime('week')">Son 7 Gün</button>
+                    <button class="filter-btn" data-time="month" onclick="filterByTime('month')">Son 30 Gün</button>
+                </div>
+            </div>
             <div class="modal-body" id="modalBody">
                 <div class="loading">Yükleniyor...</div>
             </div>
@@ -662,7 +671,10 @@
             allUsers: [],
             filteredUsers: [],
             currentFilter: 'all',
-            currentTab: 'conversations'
+            currentTab: 'conversations',
+            currentTimeFilter: 'all',
+            allConversations: [],
+            allMeals: []
         };
 
         // Initialize
@@ -845,6 +857,7 @@
         // Switch Tab
         async function switchTab(tab) {
             STATE.currentTab = tab;
+            STATE.currentTimeFilter = 'all'; // Reset time filter
 
             // Update active tab
             document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -853,18 +866,30 @@
             event.target.classList.add('active');
 
             const modalBody = document.getElementById('modalBody');
+            const timeFilterSection = document.getElementById('timeFilterSection');
+
             modalBody.innerHTML = '<div class="loading">Yükleniyor...</div>';
 
             try {
                 if (tab === 'conversations') {
+                    timeFilterSection.style.display = 'block'; // Show time filter
                     const conversations = await apiCall(`users/${STATE.currentUserPhone}/conversations`);
+                    STATE.allConversations = conversations;
                     renderConversations(conversations);
                 } else if (tab === 'meals') {
+                    timeFilterSection.style.display = 'block'; // Show time filter
                     const meals = await apiCall(`users/${STATE.currentUserPhone}/meals`);
+                    STATE.allMeals = meals;
                     renderMeals(meals);
                 } else if (tab === 'send-message') {
+                    timeFilterSection.style.display = 'none'; // Hide time filter
                     renderSendMessageForm();
                 }
+
+                // Reset time filter buttons
+                document.querySelectorAll('#timeFilterSection .filter-btn').forEach(btn => {
+                    btn.classList.toggle('active', btn.dataset.time === 'all');
+                });
             } catch (error) {
                 modalBody.innerHTML = `<div class="error">❌ Hata: ${error.message}</div>`;
             }
@@ -890,7 +915,9 @@
                 if (imagePath) {
                     // Extract just the filename from the path (e.g., "./data/images/img_123.jpg" -> "img_123.jpg")
                     const filename = imagePath.split('/').pop();
-                    imageHtml = `<img src="/images/${filename}" class="conversation-image" onclick="window.open(this.src, '_blank')">`;
+                    // Placeholder SVG for broken images
+                    const placeholder = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="150" viewBox="0 0 200 150"%3E%3Crect fill="%23f3f4f6" width="200" height="150"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="%236b7280" font-family="sans-serif" font-size="14"%3E📷 Resim bulunamadı%3C/text%3E%3C/svg%3E';
+                    imageHtml = `<img src="/images/${filename}" class="conversation-image" onerror="this.onerror=null; this.src='${placeholder}'; this.style.cursor='default';" onclick="if(this.src.indexOf('data:image') === -1) window.open(this.src, '_blank')">`;
                 }
 
                 // Show message type for image messages with no content
@@ -925,7 +952,8 @@
                 let imageHtml = '';
 
                 if (meal.image_path) {
-                    imageHtml = `<img src="/images/${meal.image_path}" class="meal-image-preview" onclick="window.open(this.src, '_blank')">`;
+                    const placeholder = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="150" viewBox="0 0 200 150"%3E%3Crect fill="%23f3f4f6" width="200" height="150"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="%236b7280" font-family="sans-serif" font-size="14"%3E📷 Resim bulunamadı%3C/text%3E%3C/svg%3E';
+                    imageHtml = `<img src="/images/${meal.image_path}" class="meal-image-preview" onerror="this.onerror=null; this.src='${placeholder}'; this.style.cursor='default';" onclick="if(this.src.indexOf('data:image') === -1) window.open(this.src, '_blank')">`;
                 }
 
                 return `
@@ -992,6 +1020,71 @@
                 await loadDashboard();
             } catch (error) {
                 alert('❌ Hata: ' + error.message);
+            }
+        }
+
+        // Filter by Time
+        function filterByTime(timeRange) {
+            STATE.currentTimeFilter = timeRange;
+
+            // Update active button
+            document.querySelectorAll('#timeFilterSection .filter-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.time === timeRange);
+            });
+
+            // Calculate date ranges
+            const now = new Date();
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+            const weekAgo = new Date(today);
+            weekAgo.setDate(weekAgo.getDate() - 7);
+            const monthAgo = new Date(today);
+            monthAgo.setDate(monthAgo.getDate() - 30);
+
+            // Filter based on current tab
+            if (STATE.currentTab === 'conversations') {
+                let filtered = STATE.allConversations;
+
+                if (timeRange !== 'all') {
+                    filtered = STATE.allConversations.filter(conv => {
+                        const date = new Date(conv.created_at);
+
+                        if (timeRange === 'today') {
+                            return date >= today;
+                        } else if (timeRange === 'yesterday') {
+                            return date >= yesterday && date < today;
+                        } else if (timeRange === 'week') {
+                            return date >= weekAgo;
+                        } else if (timeRange === 'month') {
+                            return date >= monthAgo;
+                        }
+                        return true;
+                    });
+                }
+
+                renderConversations(filtered);
+            } else if (STATE.currentTab === 'meals') {
+                let filtered = STATE.allMeals;
+
+                if (timeRange !== 'all') {
+                    filtered = STATE.allMeals.filter(meal => {
+                        const date = new Date(meal.created_at);
+
+                        if (timeRange === 'today') {
+                            return date >= today;
+                        } else if (timeRange === 'yesterday') {
+                            return date >= yesterday && date < today;
+                        } else if (timeRange === 'week') {
+                            return date >= weekAgo;
+                        } else if (timeRange === 'month') {
+                            return date >= monthAgo;
+                        }
+                        return true;
+                    });
+                }
+
+                renderMeals(filtered);
             }
         }
 

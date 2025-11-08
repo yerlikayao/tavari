@@ -90,6 +90,10 @@ async fn main() -> Result<()> {
 
         webhook_app = webhook_app.nest("/admin", admin_router);
 
+        // Serve static images
+        use tower_http::services::ServeDir;
+        webhook_app = webhook_app.nest_service("/images", ServeDir::new("./data/images"));
+
         log::info!("🌐 Webhook server starting on {}", webhook_addr);
         log::info!("🔐 Admin dashboard: http://localhost:8080/admin?token={}", admin_token);
 
