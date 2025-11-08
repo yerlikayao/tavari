@@ -111,8 +111,11 @@ impl MessageHandler {
         }
 
         // Su tüketimi kaydı
-        // "su" tek başına yazıldığında da otomatik 200ml kaydet
-        if message_lower.contains("su") && (message_lower.contains("içtim") || message_lower.contains("ml") || message_lower.trim() == "su") {
+        // "250 ml içtim", "su içtim", "500ml", "1 bardak su" gibi tüm varyasyonlar
+        let has_water_keyword = message_lower.contains("su") || message_lower.contains("ml") || message_lower.contains("bardak");
+        let has_consumed = message_lower.contains("içtim") || message_lower.contains("içim");
+
+        if (has_water_keyword && has_consumed) || (message_lower.contains("ml") && message_lower.len() < 20) || message_lower.trim() == "su" {
             self.handle_water_log(from, message).await?;
             return Ok(());
         }

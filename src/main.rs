@@ -86,7 +86,7 @@ async fn main() -> Result<()> {
             });
 
         let admin_service = Arc::new(AdminService::new(db.clone()));
-        let admin_router = create_admin_router(admin_service, admin_token.clone());
+        let admin_router = create_admin_router(admin_service, admin_token.clone(), bird_client.clone());
 
         webhook_app = webhook_app.nest("/admin", admin_router);
 

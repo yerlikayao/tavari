@@ -102,6 +102,36 @@ impl BirdComClient {
     /// NOTE: Currently disabled - Bird.com requires WhatsApp Template Messages for buttons
     /// Keep this code for future template implementation
     #[allow(dead_code)]
+    /// Send a simple text message without buttons
+    pub async fn send_message(&self, to: &str, message: &str) -> Result<()> {
+        let url = self.api_url(&format!("/channels/{}/messages", self.channel_id));
+
+        let body = serde_json::json!({
+            "receiver": {
+                "contacts": [{ "identifierValue": to }]
+            },
+            "body": {
+                "type": "text",
+                "text": { "text": message }
+            }
+        });
+
+        let response = reqwest::Client::new()
+            .post(&url)
+            .header("Authorization", format!("AccessKey {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            anyhow::bail!("Failed to send message: {}", error_text);
+        }
+
+        Ok(())
+    }
+
     pub async fn send_message_with_buttons(
         &self,
         to: &str,

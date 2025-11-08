@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Dashboard - Tavari Nutrition Bot</title>
+    <title>Tavari Admin Dashboard</title>
     <style>
         * {
             margin: 0;
@@ -11,191 +11,284 @@
             box-sizing: border-box;
         }
 
+        :root {
+            --primary: #667eea;
+            --primary-dark: #5568d3;
+            --secondary: #764ba2;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --info: #3b82f6;
+            --bg-light: #f3f4f6;
+            --text-dark: #1f2937;
+            --text-gray: #6b7280;
+            --border: #e5e7eb;
+        }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
             min-height: 100vh;
             padding: 20px;
+            color: var(--text-dark);
         }
 
         .container {
-            max-width: 1400px;
+            max-width: 1600px;
             margin: 0 auto;
         }
 
+        header {
+            background: white;
+            border-radius: 16px;
+            padding: 24px 32px;
+            margin-bottom: 24px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
         h1 {
+            font-size: 28px;
+            color: var(--primary);
+            font-weight: 700;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: var(--primary);
             color: white;
-            text-align: center;
-            margin-bottom: 30px;
-            font-size: 2.5rem;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-dark);
+            transform: translateY(-1px);
+        }
+
+        .btn-success {
+            background: var(--success);
+            color: white;
+        }
+
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+        }
+
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 13px;
         }
 
         /* Stats Grid */
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
             gap: 20px;
-            margin-bottom: 30px;
+            margin-bottom: 24px;
         }
 
         .stat-card {
             background: white;
-            padding: 25px;
+            padding: 24px;
             border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            text-align: center;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
         }
 
-        .stat-card h3 {
-            color: #667eea;
-            font-size: 0.9rem;
+        .stat-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .stat-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+
+        .stat-number {
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--text-dark);
+        }
+
+        .stat-label {
+            font-size: 13px;
+            color: var(--text-gray);
+            font-weight: 500;
             text-transform: uppercase;
-            margin-bottom: 10px;
-            font-weight: 600;
+            letter-spacing: 0.5px;
         }
 
-        .stat-card .number {
-            font-size: 2.5rem;
-            font-weight: bold;
-            color: #333;
-        }
-
-        /* Users Section */
-        .users-section {
+        /* Main Content */
+        .main-content {
             background: white;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            overflow: hidden;
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
         }
 
-        .section-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 20px;
-            font-size: 1.5rem;
-            font-weight: bold;
+        .toolbar {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
         }
 
         .search-box {
-            padding: 20px;
-            border-bottom: 2px solid #e0e0e0;
+            flex: 1;
+            min-width: 250px;
         }
 
         .search-input {
             width: 100%;
-            padding: 12px 20px;
-            font-size: 1rem;
-            border: 2px solid #e0e0e0;
+            padding: 10px 16px;
+            border: 2px solid var(--border);
             border-radius: 8px;
-            transition: all 0.3s ease;
+            font-size: 14px;
+            transition: border-color 0.2s;
         }
 
         .search-input:focus {
             outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            border-color: var(--primary);
         }
 
-        .user-list {
+        .filter-group {
+            display: flex;
+            gap: 8px;
+        }
+
+        .filter-btn {
+            padding: 10px 16px;
+            border: 2px solid var(--border);
+            background: white;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .filter-btn.active {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+
+        /* User Cards */
+        .users-grid {
             display: grid;
-            gap: 15px;
-            padding: 20px;
-            max-height: 800px;
-            overflow-y: auto;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 20px;
         }
 
         .user-card {
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
+            border: 2px solid var(--border);
+            border-radius: 12px;
             padding: 20px;
+            transition: all 0.2s;
             cursor: pointer;
-            transition: all 0.3s ease;
+            background: white;
         }
 
         .user-card:hover {
-            border-color: #667eea;
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+            border-color: var(--primary);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
             transform: translateY(-2px);
         }
 
         .user-header {
             display: flex;
             justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-            flex-wrap: wrap;
-            gap: 10px;
+            align-items: start;
+            margin-bottom: 16px;
         }
 
-        .user-info {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-            flex-wrap: wrap;
-        }
-
-        .phone-number {
-            font-size: 1.2rem;
-            font-weight: bold;
-            color: #333;
-        }
-
-        .status-badge {
-            padding: 6px 12px;
-            border-radius: 6px;
-            font-size: 0.85rem;
+        .user-phone {
+            font-size: 16px;
             font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            border: none;
-            outline: none;
+            color: var(--text-dark);
         }
 
-        .status-badge:hover {
-            opacity: 0.8;
-            transform: scale(1.05);
+        .badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
         }
 
-        .status-badge.active {
-            background: #4caf50;
-            color: white;
+        .badge-active {
+            background: #d1fae5;
+            color: var(--success);
         }
 
-        .status-badge.inactive {
-            background: #f44336;
-            color: white;
+        .badge-inactive {
+            background: #fee2e2;
+            color: var(--danger);
         }
 
-        .last-activity {
-            font-size: 0.85rem;
-            color: #666;
+        .user-meta {
+            font-size: 13px;
+            color: var(--text-gray);
+            margin-bottom: 16px;
         }
 
         .user-stats {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-            gap: 10px;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
         }
 
         .user-stat {
             text-align: center;
-            padding: 10px;
-            background: #f5f5f5;
-            border-radius: 6px;
-        }
-
-        .user-stat-label {
-            font-size: 0.75rem;
-            color: #666;
-            text-transform: uppercase;
-            margin-bottom: 5px;
+            padding: 12px;
+            background: var(--bg-light);
+            border-radius: 8px;
         }
 
         .user-stat-value {
-            font-size: 1.2rem;
-            font-weight: bold;
-            color: #667eea;
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--text-dark);
+        }
+
+        .user-stat-label {
+            font-size: 11px;
+            color: var(--text-gray);
+            text-transform: uppercase;
+            margin-top: 4px;
+        }
+
+        .user-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
         }
 
         /* Modal */
@@ -206,286 +299,312 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0,0,0,0.5);
+            background: rgba(0, 0, 0, 0.5);
             z-index: 1000;
-            overflow-y: auto;
-        }
-
-        .modal.active {
-            display: flex;
             align-items: center;
             justify-content: center;
             padding: 20px;
         }
 
+        .modal.show {
+            display: flex;
+        }
+
         .modal-content {
             background: white;
-            border-radius: 12px;
+            border-radius: 16px;
             max-width: 900px;
             width: 100%;
             max-height: 90vh;
-            overflow-y: auto;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
         }
 
         .modal-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 20px;
+            padding: 24px;
+            border-bottom: 1px solid var(--border);
             display: flex;
             justify-content: space-between;
             align-items: center;
-            position: sticky;
-            top: 0;
-            z-index: 10;
         }
 
-        .modal-header h2 {
-            font-size: 1.5rem;
+        .modal-title {
+            font-size: 20px;
+            font-weight: 700;
         }
 
         .close-btn {
             background: none;
             border: none;
-            color: white;
-            font-size: 2rem;
+            font-size: 24px;
             cursor: pointer;
-            padding: 0;
-            width: 30px;
-            height: 30px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: transform 0.2s;
-        }
-
-        .close-btn:hover {
-            transform: scale(1.2);
+            color: var(--text-gray);
         }
 
         .modal-tabs {
             display: flex;
-            border-bottom: 2px solid #e0e0e0;
-            position: sticky;
-            top: 68px;
-            background: white;
-            z-index: 9;
+            gap: 8px;
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-light);
         }
 
-        .tab {
-            flex: 1;
-            padding: 15px;
-            text-align: center;
+        .tab-btn {
+            padding: 8px 20px;
+            border: none;
+            background: transparent;
+            border-radius: 8px;
             cursor: pointer;
             font-weight: 600;
-            color: #666;
-            border: none;
-            background: none;
-            transition: all 0.3s ease;
+            font-size: 14px;
+            color: var(--text-gray);
+            transition: all 0.2s;
         }
 
-        .tab.active {
-            color: #667eea;
-            border-bottom: 3px solid #667eea;
+        .tab-btn.active {
+            background: white;
+            color: var(--primary);
         }
 
-        .tab:hover {
-            background: #f5f5f5;
-        }
-
-        .tab-content {
-            padding: 20px;
-            display: none;
-        }
-
-        .tab-content.active {
-            display: block;
+        .modal-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
         }
 
         /* Conversations */
         .conversation-item {
-            padding: 15px;
-            margin-bottom: 10px;
+            padding: 16px;
             border-radius: 8px;
-            border-left: 4px solid #667eea;
+            margin-bottom: 12px;
+            border: 1px solid var(--border);
         }
 
         .conversation-item.incoming {
-            background: #f0f4ff;
-            border-left-color: #667eea;
+            background: #eff6ff;
+            border-color: #bfdbfe;
         }
 
         .conversation-item.outgoing {
-            background: #e8f5e9;
-            border-left-color: #4caf50;
+            background: #f3f4f6;
         }
 
-        .conversation-meta {
+        .conversation-header {
             display: flex;
             justify-content: space-between;
             margin-bottom: 8px;
-            font-size: 0.85rem;
-            color: #666;
-            flex-wrap: wrap;
-            gap: 10px;
+            font-size: 12px;
+            color: var(--text-gray);
         }
 
-        .conversation-type {
+        .conversation-time {
             font-weight: 600;
-            text-transform: uppercase;
         }
 
         .conversation-content {
-            color: #333;
+            color: var(--text-dark);
             line-height: 1.5;
-            word-break: break-word;
         }
 
         .conversation-image {
-            margin-top: 10px;
-        }
-
-        .conversation-image img {
-            max-width: 300px;
-            width: 100%;
-            height: auto;
+            margin-top: 12px;
+            max-width: 200px;
             border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
             cursor: pointer;
-            transition: transform 0.2s ease;
-        }
-
-        .conversation-image img:hover {
-            transform: scale(1.02);
-        }
-
-        .conversation-image-path {
-            font-size: 0.75rem;
-            color: #999;
-            margin-top: 5px;
-            font-style: italic;
         }
 
         /* Meals */
         .meal-item {
-            padding: 15px;
-            margin-bottom: 10px;
+            padding: 16px;
             border-radius: 8px;
-            background: #fff9e6;
-            border-left: 4px solid #ffc107;
+            margin-bottom: 12px;
+            border: 1px solid var(--border);
+            display: flex;
+            gap: 16px;
+        }
+
+        .meal-image-preview {
+            width: 80px;
+            height: 80px;
+            border-radius: 8px;
+            object-fit: cover;
+            cursor: pointer;
+        }
+
+        .meal-details {
+            flex: 1;
         }
 
         .meal-header {
             display: flex;
             justify-content: space-between;
-            align-items: center;
-            margin-bottom: 10px;
-            flex-wrap: wrap;
-            gap: 10px;
-        }
-
-        .meal-type {
-            font-weight: bold;
-            color: #ff9800;
-            font-size: 1.1rem;
-        }
-
-        .meal-calories {
-            font-size: 1.2rem;
-            font-weight: bold;
-            color: #f44336;
-        }
-
-        .meal-description {
-            color: #666;
-            line-height: 1.5;
             margin-bottom: 8px;
         }
 
-        .meal-date {
-            font-size: 0.85rem;
-            color: #999;
+        .meal-type {
+            font-weight: 600;
+            color: var(--primary);
         }
 
-        /* Loading & Error States */
+        .meal-calories {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--danger);
+        }
+
+        .meal-description {
+            font-size: 14px;
+            color: var(--text-gray);
+            margin-bottom: 8px;
+        }
+
+        .meal-time {
+            font-size: 12px;
+            color: var(--text-gray);
+        }
+
+        /* Send Message Modal */
+        .message-form {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .form-label {
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        textarea {
+            padding: 12px;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: inherit;
+            resize: vertical;
+            min-height: 120px;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
         .loading {
             text-align: center;
             padding: 40px;
-            color: #666;
+            color: var(--text-gray);
         }
 
         .error {
-            background: #ffebee;
-            color: #c62828;
-            padding: 15px;
+            background: #fee2e2;
+            color: var(--danger);
+            padding: 16px;
             border-radius: 8px;
-            margin: 20px;
+            margin: 20px 0;
         }
 
-        .empty-state {
+        .empty {
             text-align: center;
             padding: 40px;
-            color: #999;
+            color: var(--text-gray);
         }
 
         /* Responsive */
         @media (max-width: 768px) {
-            h1 {
-                font-size: 1.8rem;
+            .users-grid {
+                grid-template-columns: 1fr;
             }
 
             .stats-grid {
                 grid-template-columns: repeat(2, 1fr);
             }
 
-            .user-stats {
-                grid-template-columns: repeat(2, 1fr);
-            }
-
-            .conversation-image img {
-                max-width: 100%;
-            }
-
-            .modal-content {
-                max-height: 95vh;
+            .toolbar {
+                flex-direction: column;
             }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🍽️ Admin Dashboard</h1>
+        <header>
+            <h1>🍽️ Tavari Admin Dashboard</h1>
+            <div class="header-actions">
+                <button class="btn btn-primary" onclick="openBroadcastModal()">
+                    📢 Toplu Mesaj
+                </button>
+                <button class="btn btn-success" onclick="exportData()">
+                    💾 Export
+                </button>
+                <button class="btn btn-primary" onclick="loadDashboard()">
+                    🔄 Yenile
+                </button>
+            </div>
+        </header>
 
+        <!-- Stats -->
         <div class="stats-grid">
             <div class="stat-card">
-                <h3>Toplam Kullanıcı</h3>
-                <div class="number" id="totalUsers">-</div>
+                <div class="stat-header">
+                    <div>
+                        <div class="stat-label">Toplam Kullanıcı</div>
+                        <div class="stat-number" id="totalUsers">-</div>
+                    </div>
+                    <div class="stat-icon" style="background: #dbeafe; color: var(--info);">👥</div>
+                </div>
             </div>
             <div class="stat-card">
-                <h3>Bugün Aktif</h3>
-                <div class="number" id="activeToday">-</div>
+                <div class="stat-header">
+                    <div>
+                        <div class="stat-label">Bugün Aktif</div>
+                        <div class="stat-number" id="activeToday">-</div>
+                    </div>
+                    <div class="stat-icon" style="background: #d1fae5; color: var(--success);">✅</div>
+                </div>
             </div>
             <div class="stat-card">
-                <h3>Bugün Yemek</h3>
-                <div class="number" id="mealsToday">-</div>
+                <div class="stat-header">
+                    <div>
+                        <div class="stat-label">Bugün Yemekler</div>
+                        <div class="stat-number" id="mealsToday">-</div>
+                    </div>
+                    <div class="stat-icon" style="background: #fef3c7; color: var(--warning);">🍽️</div>
+                </div>
             </div>
             <div class="stat-card">
-                <h3>Toplam Mesaj</h3>
-                <div class="number" id="conversationsToday">-</div>
+                <div class="stat-header">
+                    <div>
+                        <div class="stat-label">Toplam Mesajlar</div>
+                        <div class="stat-number" id="conversationsToday">-</div>
+                    </div>
+                    <div class="stat-icon" style="background: #fce7f3; color: #ec4899;">💬</div>
+                </div>
             </div>
         </div>
 
-        <div class="users-section">
-            <div class="section-header">👥 Kullanıcılar</div>
-            <div class="search-box">
-                <input
-                    type="text"
-                    id="searchInput"
-                    class="search-input"
-                    placeholder="Kullanıcı telefon numarası ile ara..."
-                >
+        <!-- Main Content -->
+        <div class="main-content">
+            <div class="toolbar">
+                <div class="search-box">
+                    <input type="text" class="search-input" id="searchInput" placeholder="🔍 Telefon numarasına göre ara...">
+                </div>
+                <div class="filter-group">
+                    <button class="filter-btn active" data-filter="all" onclick="filterUsers('all')">Tümü</button>
+                    <button class="filter-btn" data-filter="active" onclick="filterUsers('active')">Aktif</button>
+                    <button class="filter-btn" data-filter="inactive" onclick="filterUsers('inactive')">İnaktif</button>
+                    <button class="filter-btn" data-filter="today" onclick="filterUsers('today')">Bugün Aktif</button>
+                </div>
             </div>
-            <div class="user-list" id="userList">
+
+            <div class="users-grid" id="userList">
                 <div class="loading">Yükleniyor...</div>
             </div>
         </div>
@@ -495,24 +614,41 @@
     <div class="modal" id="userModal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2 id="modalUserPhone">-</h2>
-                <button class="close-btn" onclick="closeModal()">&times;</button>
+                <h2 class="modal-title" id="modalUserPhone"></h2>
+                <button class="close-btn" onclick="closeUserModal()">&times;</button>
             </div>
-
             <div class="modal-tabs">
-                <button class="tab active" data-tab="conversations">💬 Mesajlar</button>
-                <button class="tab" data-tab="meals">🍽️ Yemekler</button>
+                <button class="tab-btn active" onclick="switchTab('conversations')">💬 Mesajlar</button>
+                <button class="tab-btn" onclick="switchTab('meals')">🍽️ Yemekler</button>
+                <button class="tab-btn" onclick="switchTab('send-message')">📤 Mesaj Gönder</button>
             </div>
-
-            <div class="tab-content active" id="conversationsTab">
-                <div id="conversationsList">
-                    <div class="loading">Yükleniyor...</div>
-                </div>
+            <div class="modal-body" id="modalBody">
+                <div class="loading">Yükleniyor...</div>
             </div>
+        </div>
+    </div>
 
-            <div class="tab-content" id="mealsTab">
-                <div id="mealsList">
-                    <div class="loading">Yükleniyor...</div>
+    <!-- Broadcast Message Modal -->
+    <div class="modal" id="broadcastModal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h2 class="modal-title">📢 Toplu Mesaj Gönder</h2>
+                <button class="close-btn" onclick="closeBroadcastModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="message-form">
+                    <div class="form-group">
+                        <label class="form-label">Kime Gönderilsin?</label>
+                        <select id="broadcastTarget" style="padding: 10px; border: 2px solid var(--border); border-radius: 8px;">
+                            <option value="all">Tüm Kullanıcılar</option>
+                            <option value="active">Sadece Aktif Kullanıcılar</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Mesaj</label>
+                        <textarea id="broadcastMessage" placeholder="Mesajınızı yazın..."></textarea>
+                    </div>
+                    <button class="btn btn-primary" onclick="sendBroadcast()">Gönder</button>
                 </div>
             </div>
         </div>
@@ -524,6 +660,8 @@
             token: null,
             currentUserPhone: null,
             allUsers: [],
+            filteredUsers: [],
+            currentFilter: 'all',
             currentTab: 'conversations'
         };
 
@@ -533,43 +671,28 @@
             STATE.token = urlParams.get('token');
 
             if (!STATE.token) {
-                document.body.innerHTML = '<div class="error">❌ Yetkisiz erişim. Token gerekli.</div>';
+                document.body.innerHTML = '<div class="error" style="margin: 20px;">❌ Yetkisiz erişim. Token gerekli.</div>';
                 return;
             }
 
-            // Setup event listeners
-            document.getElementById('searchInput').addEventListener('input', filterUsers);
-            document.querySelectorAll('.tab').forEach(tab => {
-                tab.addEventListener('click', () => switchTab(tab.dataset.tab));
-            });
-
-            // Load initial data
+            document.getElementById('searchInput').addEventListener('input', handleSearch);
             loadDashboard();
-
-            // Auto refresh every 30 seconds
             setInterval(loadDashboard, 30000);
         })();
 
-        // API Functions
-        async function apiCall(endpoint) {
-            const response = await fetch(`/admin/api/${endpoint}?token=${STATE.token}`);
+        // API Call Helper
+        async function apiCall(endpoint, options = {}) {
+            const url = `/admin/api/${endpoint}?token=${STATE.token}`;
+            const response = await fetch(url, options);
+
             if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                throw new Error(`API Error: ${response.status}`);
             }
+
             return response.json();
         }
 
-        async function apiPost(endpoint) {
-            const response = await fetch(`/admin/api/${endpoint}?token=${STATE.token}`, {
-                method: 'POST'
-            });
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-            return response.json();
-        }
-
-        // Load Dashboard Data
+        // Load Dashboard
         async function loadDashboard() {
             try {
                 const data = await apiCall('dashboard');
@@ -580,21 +703,47 @@
                 document.getElementById('conversationsToday').textContent = data.total_conversations_today;
 
                 STATE.allUsers = data.users;
-                renderUsers(STATE.allUsers);
+                filterUsers(STATE.currentFilter);
             } catch (error) {
                 console.error('Error loading dashboard:', error);
                 document.getElementById('userList').innerHTML =
-                    `<div class="error">❌ Veri yüklenirken hata oluştu: ${error.message}</div>`;
+                    `<div class="error">❌ Veri yüklenirken hata: ${error.message}</div>`;
             }
         }
 
         // Filter Users
-        function filterUsers() {
+        function filterUsers(filter) {
+            STATE.currentFilter = filter;
+
+            // Update active button
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.filter === filter);
+            });
+
+            const today = new Date().toDateString();
+
+            STATE.filteredUsers = STATE.allUsers.filter(userStat => {
+                if (filter === 'all') return true;
+                if (filter === 'active') return userStat.user.is_active;
+                if (filter === 'inactive') return !userStat.user.is_active;
+                if (filter === 'today') {
+                    if (!userStat.last_activity) return false;
+                    const lastActive = new Date(userStat.last_activity).toDateString();
+                    return lastActive === today;
+                }
+                return true;
+            });
+
+            renderUsers(STATE.filteredUsers);
+        }
+
+        // Handle Search
+        function handleSearch() {
             const searchTerm = document.getElementById('searchInput').value.toLowerCase();
-            const filteredUsers = STATE.allUsers.filter(userStat =>
+            const filtered = STATE.filteredUsers.filter(userStat =>
                 userStat.user.phone_number.toLowerCase().includes(searchTerm)
             );
-            renderUsers(filteredUsers);
+            renderUsers(filtered);
         }
 
         // Render Users
@@ -602,227 +751,296 @@
             const userList = document.getElementById('userList');
 
             if (users.length === 0) {
-                userList.innerHTML = '<div class="empty-state">📭 Kullanıcı bulunamadı</div>';
+                userList.innerHTML = '<div class="empty">Kullanıcı bulunamadı</div>';
                 return;
             }
 
             userList.innerHTML = users.map(userStat => {
-                const lastActivity = userStat.last_activity
-                    ? new Date(userStat.last_activity).toLocaleString('tr-TR')
-                    : 'Hiç aktivite yok';
-
-                const isActive = userStat.user.is_active ?? true;
-                const statusClass = isActive ? 'active' : 'inactive';
-                const statusText = isActive ? 'Aktif' : 'Deaktif';
-
-                const totalCalories = Math.round(userStat.total_calories_today ?? 0);
-                const totalWater = userStat.total_water_today ?? 0;
+                const user = userStat.user;
+                const lastActivity = userStat.last_activity ? formatRelativeTime(userStat.last_activity) : 'Hiç';
+                const activeClass = user.is_active ? 'badge-active' : 'badge-inactive';
+                const activeText = user.is_active ? 'Aktif' : 'İnaktif';
 
                 return `
-                    <div class="user-card" onclick="openUserModal('${userStat.user.phone_number}')">
+                    <div class="user-card">
                         <div class="user-header">
-                            <div class="user-info">
-                                <div class="phone-number">${userStat.user.phone_number}</div>
-                                <button
-                                    class="status-badge ${statusClass}"
-                                    onclick="toggleUserStatus('${userStat.user.phone_number}', event)"
-                                    title="Durumu değiştirmek için tıklayın"
-                                >
-                                    ${statusText}
-                                </button>
-                            </div>
-                            <div class="last-activity">${lastActivity}</div>
+                            <div class="user-phone">${escapeHtml(user.phone_number)}</div>
+                            <span class="badge ${activeClass}">${activeText}</span>
                         </div>
+                        <div class="user-meta">Son Aktivite: ${lastActivity}</div>
                         <div class="user-stats">
                             <div class="user-stat">
-                                <div class="user-stat-label">Toplam Yemek</div>
                                 <div class="user-stat-value">${userStat.total_meals}</div>
+                                <div class="user-stat-label">Toplam Yemek</div>
                             </div>
                             <div class="user-stat">
-                                <div class="user-stat-label">Mesaj Sayısı</div>
                                 <div class="user-stat-value">${userStat.total_conversations}</div>
+                                <div class="user-stat-label">Mesaj</div>
                             </div>
                             <div class="user-stat">
+                                <div class="user-stat-value">${Math.round(userStat.total_calories_today)}</div>
                                 <div class="user-stat-label">Bugün Kalori</div>
-                                <div class="user-stat-value">${totalCalories}</div>
                             </div>
                             <div class="user-stat">
+                                <div class="user-stat-value">${userStat.total_water_today}</div>
                                 <div class="user-stat-label">Bugün Su (ml)</div>
-                                <div class="user-stat-value">${totalWater}</div>
                             </div>
+                        </div>
+                        <div class="user-actions">
+                            <button class="btn btn-primary btn-sm" style="flex: 1;" onclick="openUserModal('${user.phone_number}')">
+                                👁️ Detaylar
+                            </button>
+                            <button class="btn ${user.is_active ? 'btn-danger' : 'btn-success'} btn-sm"
+                                    onclick="toggleUserActive('${user.phone_number}')">
+                                ${user.is_active ? '🔴 Deaktive Et' : '🟢 Aktive Et'}
+                            </button>
                         </div>
                     </div>
                 `;
             }).join('');
         }
 
-        // Toggle User Status
-        async function toggleUserStatus(phone, event) {
-            event.stopPropagation();
+        // Format Relative Time
+        function formatRelativeTime(dateStr) {
+            const date = new Date(dateStr);
+            const now = new Date();
+            const diffMs = now - date;
+            const diffMins = Math.floor(diffMs / 60000);
+            const diffHours = Math.floor(diffMs / 3600000);
+            const diffDays = Math.floor(diffMs / 86400000);
 
-            if (!confirm(`${phone} kullanıcısının durumunu değiştirmek istediğinizden emin misiniz?`)) {
-                return;
-            }
+            if (diffMins < 1) return 'Az önce';
+            if (diffMins < 60) return `${diffMins} dakika önce`;
+            if (diffHours < 24) return `${diffHours} saat önce`;
+            if (diffDays === 0) return 'Bugün ' + date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+            if (diffDays === 1) return 'Dün ' + date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+            if (diffDays < 7) return `${diffDays} gün önce`;
 
-            try {
-                const result = await apiPost(`users/${encodeURIComponent(phone)}/toggle-active`);
-
-                // Update user in allUsers array
-                const userIndex = STATE.allUsers.findIndex(u => u.user.phone_number === phone);
-                if (userIndex !== -1) {
-                    STATE.allUsers[userIndex].user.is_active = result.is_active;
-                }
-
-                // Re-render with current filter
-                filterUsers();
-
-                alert(`✅ Kullanıcı durumu ${result.is_active ? 'Aktif' : 'Deaktif'} olarak güncellendi`);
-            } catch (error) {
-                console.error('Error toggling user status:', error);
-                alert(`❌ Hata: ${error.message}`);
-            }
+            return date.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' }) +
+                   ' ' + date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
         }
 
         // Open User Modal
         async function openUserModal(phone) {
             STATE.currentUserPhone = phone;
-            document.getElementById('modalUserPhone').textContent = phone;
-            document.getElementById('userModal').classList.add('active');
+            STATE.currentTab = 'conversations';
 
-            // Reset to conversations tab
-            switchTab('conversations');
+            document.getElementById('modalUserPhone').textContent = phone;
+            document.getElementById('userModal').classList.add('show');
+
+            // Reset tabs
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.querySelector('.tab-btn').classList.add('active');
+
+            await switchTab('conversations');
         }
 
-        // Close Modal
-        function closeModal() {
-            document.getElementById('userModal').classList.remove('active');
-            STATE.currentUserPhone = null;
+        // Close User Modal
+        function closeUserModal() {
+            document.getElementById('userModal').classList.remove('show');
         }
 
         // Switch Tab
-        function switchTab(tabName) {
-            STATE.currentTab = tabName;
+        async function switchTab(tab) {
+            STATE.currentTab = tab;
 
-            // Update tab buttons
-            document.querySelectorAll('.tab').forEach(tab => {
-                tab.classList.remove('active');
-                if (tab.dataset.tab === tabName) {
-                    tab.classList.add('active');
-                }
+            // Update active tab
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active');
             });
+            event.target.classList.add('active');
 
-            // Update tab content
-            document.querySelectorAll('.tab-content').forEach(content => {
-                content.classList.remove('active');
-            });
-
-            if (tabName === 'conversations') {
-                document.getElementById('conversationsTab').classList.add('active');
-                loadConversations(STATE.currentUserPhone);
-            } else if (tabName === 'meals') {
-                document.getElementById('mealsTab').classList.add('active');
-                loadMeals(STATE.currentUserPhone);
-            }
-        }
-
-        // Load Conversations
-        async function loadConversations(phone) {
-            const list = document.getElementById('conversationsList');
-            list.innerHTML = '<div class="loading">⏳ Mesajlar yükleniyor...</div>';
+            const modalBody = document.getElementById('modalBody');
+            modalBody.innerHTML = '<div class="loading">Yükleniyor...</div>';
 
             try {
-                const conversations = await apiCall(`users/${encodeURIComponent(phone)}/conversations`);
-
-                if (conversations.length === 0) {
-                    list.innerHTML = '<div class="empty-state">📭 Henüz mesaj yok</div>';
-                    return;
+                if (tab === 'conversations') {
+                    const conversations = await apiCall(`users/${STATE.currentUserPhone}/conversations`);
+                    renderConversations(conversations);
+                } else if (tab === 'meals') {
+                    const meals = await apiCall(`users/${STATE.currentUserPhone}/meals`);
+                    renderMeals(meals);
+                } else if (tab === 'send-message') {
+                    renderSendMessageForm();
                 }
-
-                list.innerHTML = conversations.map(conv => {
-                    const date = new Date(conv.created_at).toLocaleString('tr-TR');
-                    const directionClass = (conv.direction || '').toLowerCase();
-                    const directionLabel = conv.direction === 'incoming' ? 'Gelen' : 'Giden';
-
-                    // Check for image
-                    let imageHtml = '';
-                    if (conv.metadata && conv.metadata.image_path) {
-                        imageHtml = `
-                            <div class="conversation-image">
-                                <img
-                                    src="${conv.metadata.image_path}"
-                                    alt="Gönderilen görsel"
-                                    onclick="window.open('${conv.metadata.image_path}', '_blank')"
-                                    loading="lazy"
-                                >
-                                <div class="conversation-image-path">${conv.metadata.image_path}</div>
-                            </div>
-                        `;
-                    }
-
-                    return `
-                        <div class="conversation-item ${directionClass}">
-                            <div class="conversation-meta">
-                                <span class="conversation-type">${directionLabel} - ${conv.message_type}</span>
-                                <span>${date}</span>
-                            </div>
-                            <div class="conversation-content">${escapeHtml(conv.content)}</div>
-                            ${imageHtml}
-                        </div>
-                    `;
-                }).join('');
             } catch (error) {
-                console.error('Error loading conversations:', error);
-                list.innerHTML = `<div class="error">❌ Mesajlar yüklenirken hata: ${error.message}</div>`;
+                modalBody.innerHTML = `<div class="error">❌ Hata: ${error.message}</div>`;
             }
         }
 
-        // Load Meals
-        async function loadMeals(phone) {
-            const list = document.getElementById('mealsList');
-            list.innerHTML = '<div class="loading">⏳ Yemekler yükleniyor...</div>';
+        // Render Conversations
+        function renderConversations(conversations) {
+            const modalBody = document.getElementById('modalBody');
 
-            try {
-                const meals = await apiCall(`users/${encodeURIComponent(phone)}/meals`);
+            if (conversations.length === 0) {
+                modalBody.innerHTML = '<div class="empty">Mesaj bulunamadı</div>';
+                return;
+            }
 
-                if (meals.length === 0) {
-                    list.innerHTML = '<div class="empty-state">📭 Henüz yemek kaydı yok</div>';
-                    return;
+            modalBody.innerHTML = conversations.map(conv => {
+                const directionClass = conv.direction === 'incoming' ? 'incoming' : 'outgoing';
+                const directionText = conv.direction === 'incoming' ? 'Gelen' : 'Giden';
+                const time = formatRelativeTime(conv.created_at);
+
+                let imageHtml = '';
+                if (conv.metadata && conv.metadata.image_path) {
+                    imageHtml = `<img src="/images/${conv.metadata.image_path}" class="conversation-image" onclick="window.open(this.src, '_blank')">`;
                 }
 
-                list.innerHTML = meals.map(meal => {
-                    const date = new Date(meal.created_at).toLocaleString('tr-TR');
-                    const calories = Math.round(meal.calories);
+                return `
+                    <div class="conversation-item ${directionClass}">
+                        <div class="conversation-header">
+                            <span>${directionText}</span>
+                            <span class="conversation-time">${time}</span>
+                        </div>
+                        <div class="conversation-content">${escapeHtml(conv.content)}</div>
+                        ${imageHtml}
+                    </div>
+                `;
+            }).join('');
+        }
 
-                    return `
-                        <div class="meal-item">
+        // Render Meals
+        function renderMeals(meals) {
+            const modalBody = document.getElementById('modalBody');
+
+            if (meals.length === 0) {
+                modalBody.innerHTML = '<div class="empty">Yemek bulunamadı</div>';
+                return;
+            }
+
+            modalBody.innerHTML = meals.map(meal => {
+                const time = formatRelativeTime(meal.created_at);
+                let imageHtml = '';
+
+                if (meal.image_path) {
+                    imageHtml = `<img src="/images/${meal.image_path}" class="meal-image-preview" onclick="window.open(this.src, '_blank')">`;
+                }
+
+                return `
+                    <div class="meal-item">
+                        ${imageHtml}
+                        <div class="meal-details">
                             <div class="meal-header">
-                                <span class="meal-type">${meal.meal_type}</span>
-                                <span class="meal-calories">${calories} kcal</span>
+                                <span class="meal-type">${escapeHtml(meal.meal_type)}</span>
+                                <span class="meal-calories">${Math.round(meal.calories)} kcal</span>
                             </div>
                             <div class="meal-description">${escapeHtml(meal.description)}</div>
-                            <div class="meal-date">📅 ${date}</div>
+                            <div class="meal-time">${time}</div>
                         </div>
-                    `;
-                }).join('');
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Render Send Message Form
+        function renderSendMessageForm() {
+            const modalBody = document.getElementById('modalBody');
+            modalBody.innerHTML = `
+                <div class="message-form">
+                    <div class="form-group">
+                        <label class="form-label">Mesaj</label>
+                        <textarea id="userMessage" placeholder="Mesajınızı yazın..."></textarea>
+                    </div>
+                    <button class="btn btn-primary" onclick="sendMessage()">📤 Gönder</button>
+                </div>
+            `;
+        }
+
+        // Send Message to User
+        async function sendMessage() {
+            const message = document.getElementById('userMessage').value.trim();
+
+            if (!message) {
+                alert('Lütfen bir mesaj yazın');
+                return;
+            }
+
+            try {
+                await apiCall(`users/${STATE.currentUserPhone}/send-message`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message })
+                });
+
+                alert('✅ Mesaj gönderildi!');
+                document.getElementById('userMessage').value = '';
             } catch (error) {
-                console.error('Error loading meals:', error);
-                list.innerHTML = `<div class="error">❌ Yemekler yüklenirken hata: ${error.message}</div>`;
+                alert('❌ Mesaj gönderilemedi: ' + error.message);
             }
         }
 
-        // Utility: Escape HTML
+        // Toggle User Active Status
+        async function toggleUserActive(phone) {
+            try {
+                const result = await apiCall(`users/${phone}/toggle-active`, {
+                    method: 'POST'
+                });
+
+                alert(`✅ Kullanıcı ${result.is_active ? 'aktive' : 'deaktive'} edildi`);
+                await loadDashboard();
+            } catch (error) {
+                alert('❌ Hata: ' + error.message);
+            }
+        }
+
+        // Broadcast Message
+        function openBroadcastModal() {
+            document.getElementById('broadcastModal').classList.add('show');
+        }
+
+        function closeBroadcastModal() {
+            document.getElementById('broadcastModal').classList.remove('show');
+        }
+
+        async function sendBroadcast() {
+            const target = document.getElementById('broadcastTarget').value;
+            const message = document.getElementById('broadcastMessage').value.trim();
+
+            if (!message) {
+                alert('Lütfen bir mesaj yazın');
+                return;
+            }
+
+            if (!confirm(`${target === 'all' ? 'Tüm kullanıcılara' : 'Sadece aktif kullanıcılara'} mesaj gönderilecek. Emin misiniz?`)) {
+                return;
+            }
+
+            try {
+                await apiCall('broadcast', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ target, message })
+                });
+
+                alert('✅ Mesajlar gönderildi!');
+                closeBroadcastModal();
+                document.getElementById('broadcastMessage').value = '';
+            } catch (error) {
+                alert('❌ Mesaj gönderilemedi: ' + error.message);
+            }
+        }
+
+        // Export Data
+        function exportData() {
+            const dataStr = JSON.stringify(STATE.allUsers, null, 2);
+            const dataBlob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(dataBlob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `tavari-users-${new Date().toISOString().split('T')[0]}.json`;
+            link.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // HTML Escape
         function escapeHtml(text) {
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
         }
-
-        // Close modal when clicking outside
-        document.getElementById('userModal').addEventListener('click', (e) => {
-            if (e.target.id === 'userModal') {
-                closeModal();
-            }
-        });
     </script>
 </body>
 </html>

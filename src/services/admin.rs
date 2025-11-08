@@ -27,7 +27,7 @@ pub struct AdminDashboardData {
 }
 
 pub struct AdminService {
-    db: Arc<Database>,
+    pub db: Arc<Database>,
 }
 
 impl AdminService {
