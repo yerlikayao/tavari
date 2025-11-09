@@ -144,29 +144,34 @@ impl BirdComClient {
 
         let url = self.api_url(&format!("/channels/{}/messages", self.channel_id));
 
-        // For now, send a text message with numbered options
-        // Bird.com's "list" type requires complex structure - fallback to simple text
-        let mut button_text = format!("{}\n\n", message);
-        for (i, (id, title)) in buttons.iter().enumerate() {
-            button_text.push_str(&format!("{}. {}\n", i + 1, title));
-        }
-        button_text.push_str("\nYukarıdaki seçeneklerden birinin numarasını yazın veya direkt ml cinsinden yazın.");
+        // Try Bird.com's "list" type for WhatsApp list messages
+        let rows: Vec<serde_json::Value> = buttons.iter().map(|(id, title)| {
+            serde_json::json!({
+                "id": id,
+                "title": title,
+                "description": ""
+            })
+        }).collect();
 
-        let payload = BirdMessage {
-            receiver: Receiver {
-                contacts: vec![Contact {
-                    identifier_value: to.to_string(),
-                }],
+        let payload = serde_json::json!({
+            "receiver": {
+                "contacts": [{ "identifierValue": to }]
             },
-            body: Body::Text {
-                msg_type: "text".to_string(),
-                text: TextContent {
-                    text: button_text,
-                },
-            },
-        };
+            "body": {
+                "type": "list",
+                "list": {
+                    "header": "Su Kaydı 💧",
+                    "body": message,
+                    "buttonText": "Seç",
+                    "sections": [{
+                        "title": "Miktar Seçin",
+                        "rows": rows
+                    }]
+                }
+            }
+        });
 
-        log::info!("🔍 DEBUG - Sending interactive message to URL: {}", url);
+        log::info!("🔍 DEBUG - Sending list message to URL: {}", url);
         log::info!("🔍 DEBUG - Payload: {}", serde_json::to_string_pretty(&payload)?);
 
         let response = self

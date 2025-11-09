@@ -66,12 +66,21 @@ pub struct InteractiveResponse {
     pub interactive_type: String,
     #[serde(rename = "buttonReply")]
     pub button_reply: Option<ButtonReplyData>,
+    #[serde(rename = "listReply")]
+    pub list_reply: Option<ListReplyData>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ButtonReplyData {
     pub id: String,
     pub title: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ListReplyData {
+    pub id: String,
+    pub title: String,
+    pub description: Option<String>,
 }
 
 /// Handle incoming webhook from Bird.com
@@ -201,7 +210,22 @@ pub async fn handle_bird_webhook(
         }
         "interactive" => {
             if let Some(interactive) = webhook.payload.body.interactive {
-                if let Some(button_reply) = interactive.button_reply {
+                // Check for list reply first (WhatsApp list messages)
+                if let Some(list_reply) = interactive.list_reply {
+                    log::info!("📋 List selection from {}: id={}, title={}", from, list_reply.id, list_reply.title);
+
+                    // Handle water list selections
+                    if list_reply.id.starts_with("water_") {
+                        // Extract amount from list ID (e.g., "water_200" -> "200")
+                        let amount = list_reply.id.strip_prefix("water_").unwrap_or("0");
+                        let water_message = format!("{} ml içtim", amount);
+                        log::info!("💧 Processing water list selection: {}", water_message);
+                        handler.handle_message(from, &water_message, false, None).await?;
+                    } else {
+                        // Unknown selection, just handle as text
+                        handler.handle_message(from, &list_reply.title, false, None).await?;
+                    }
+                } else if let Some(button_reply) = interactive.button_reply {
                     log::info!("🔘 Button click from {}: id={}, title={}", from, button_reply.id, button_reply.title);
 
                     // Handle water button clicks
@@ -216,7 +240,7 @@ pub async fn handle_bird_webhook(
                         handler.handle_message(from, &button_reply.title, false, None).await?;
                     }
                 } else {
-                    log::warn!("⚠️ Interactive message received but no button reply");
+                    log::warn!("⚠️ Interactive message received but no button/list reply");
                 }
             }
         }

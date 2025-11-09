@@ -123,12 +123,18 @@ impl MessageHandler {
             return Ok(());
         }
 
+        // "su" yazıldığında butonları göster
+        if message_lower.trim() == "su" {
+            self.handle_water_buttons(from).await?;
+            return Ok(());
+        }
+
         // Su tüketimi kaydı
         // "250 ml içtim", "su içtim", "500ml", "1 bardak su" gibi tüm varyasyonlar
         let has_water_keyword = message_lower.contains("su") || message_lower.contains("ml") || message_lower.contains("bardak");
         let has_consumed = message_lower.contains("içtim") || message_lower.contains("içim");
 
-        if (has_water_keyword && has_consumed) || (message_lower.contains("ml") && message_lower.len() < 20) || message_lower.trim() == "su" {
+        if (has_water_keyword && has_consumed) || (message_lower.contains("ml") && message_lower.len() < 20) {
             self.handle_water_log(from, message).await?;
             return Ok(());
         }
@@ -839,8 +845,8 @@ impl MessageHandler {
                    *🍽️ Nasıl Kullanılır?*\n\
                    • Yemek fotoğrafı gönder\n\
                    • ogun [açıklama] - Text ile kaydet\n\
-                   • 250 ml su içtim - Su takibi\n\
-                   • buton - Hızlı su kaydı butonları 💧\n\n\
+                   • su - Hızlı su kaydı menüsü 💧\n\
+                   • 250 ml içtim - Direkt su takibi\n\n\
                    *📊 Ana Komutlar*\n\
                    rapor - Günlük özet (progress bar)\n\
                    geçmiş - Son 5 öğün\n\
