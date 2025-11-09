@@ -5,7 +5,6 @@ mod webhook; // Bird.com webhook handler
 
 #[cfg(feature = "webhook-server")]
 use webhook::server::create_webhook_router;
-#[cfg(feature = "webhook-server")]
 
 use anyhow::Result;
 use dotenv::dotenv;

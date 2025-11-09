@@ -132,6 +132,7 @@ impl BirdComClient {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub async fn send_message_with_buttons(
         &self,
         to: &str,

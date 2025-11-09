@@ -88,19 +88,29 @@ impl ReminderService {
                             if let Some(ref breakfast_time) = user.breakfast_time {
                                 log::debug!("🍳 Checking breakfast for {}: current={}, target={}", user.phone_number, current_time, breakfast_time);
                                 if &current_time == breakfast_time {
-                                    let msg = "☀️ *Kahvaltı zamanı!*\n\nYedikten sonra fotoğrafını gönder 📸";
-                                    let _ = whatsapp.send_message(&user.phone_number, msg).await;
+                                    // Bugün kahvaltı kaydedilmiş mi kontrol et
+                                    let today = now_user.date_naive();
+                                    if let Ok(todays_meals) = db.get_todays_meal_types(&user.phone_number, today).await {
+                                        let has_breakfast = todays_meals.iter().any(|m| matches!(m, crate::models::MealType::Breakfast));
 
-                                    // Log reminder
-                                    let _ = db.log_conversation(
-                                        &user.phone_number,
-                                        ConversationDirection::Outgoing,
-                                        MessageType::Reminder,
-                                        msg,
-                                        Some(serde_json::json!({"reminder_type": "breakfast", "time": breakfast_time})),
-                                    ).await;
+                                        if has_breakfast {
+                                            log::debug!("⏭️ Skipping breakfast reminder for {} - already logged today", user.phone_number);
+                                        } else {
+                                            let msg = "☀️ *Kahvaltı zamanı!*\n\nYedikten sonra fotoğrafını gönder 📸";
+                                            let _ = whatsapp.send_message(&user.phone_number, msg).await;
 
-                                    log::info!("📤 Sent breakfast reminder to {} ({})", user.phone_number, user.timezone);
+                                            // Log reminder
+                                            let _ = db.log_conversation(
+                                                &user.phone_number,
+                                                ConversationDirection::Outgoing,
+                                                MessageType::Reminder,
+                                                msg,
+                                                Some(serde_json::json!({"reminder_type": "breakfast", "time": breakfast_time})),
+                                            ).await;
+
+                                            log::info!("📤 Sent breakfast reminder to {} ({})", user.phone_number, user.timezone);
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -110,19 +120,29 @@ impl ReminderService {
                             if let Some(ref lunch_time) = user.lunch_time {
                                 log::debug!("🍱 Checking lunch for {}: current={}, target={}", user.phone_number, current_time, lunch_time);
                                 if &current_time == lunch_time {
-                                    let msg = "🌞 *Öğle yemeği zamanı!*\n\nYedikten sonra fotoğrafını gönder 📸";
-                                    let _ = whatsapp.send_message(&user.phone_number, msg).await;
+                                    // Bugün öğle yemeği kaydedilmiş mi kontrol et
+                                    let today = now_user.date_naive();
+                                    if let Ok(todays_meals) = db.get_todays_meal_types(&user.phone_number, today).await {
+                                        let has_lunch = todays_meals.iter().any(|m| matches!(m, crate::models::MealType::Lunch));
 
-                                    // Log reminder
-                                    let _ = db.log_conversation(
-                                        &user.phone_number,
-                                        ConversationDirection::Outgoing,
-                                        MessageType::Reminder,
-                                        msg,
-                                        Some(serde_json::json!({"reminder_type": "lunch", "time": lunch_time})),
-                                    ).await;
+                                        if has_lunch {
+                                            log::debug!("⏭️ Skipping lunch reminder for {} - already logged today", user.phone_number);
+                                        } else {
+                                            let msg = "🌞 *Öğle yemeği zamanı!*\n\nYedikten sonra fotoğrafını gönder 📸";
+                                            let _ = whatsapp.send_message(&user.phone_number, msg).await;
 
-                                    log::info!("📤 Sent lunch reminder to {} ({})", user.phone_number, user.timezone);
+                                            // Log reminder
+                                            let _ = db.log_conversation(
+                                                &user.phone_number,
+                                                ConversationDirection::Outgoing,
+                                                MessageType::Reminder,
+                                                msg,
+                                                Some(serde_json::json!({"reminder_type": "lunch", "time": lunch_time})),
+                                            ).await;
+
+                                            log::info!("📤 Sent lunch reminder to {} ({})", user.phone_number, user.timezone);
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -132,19 +152,29 @@ impl ReminderService {
                             if let Some(ref dinner_time) = user.dinner_time {
                                 log::debug!("🍽️ Checking dinner for {}: current={}, target={}", user.phone_number, current_time, dinner_time);
                                 if &current_time == dinner_time {
-                                    let msg = "🌙 *Akşam yemeği zamanı!*\n\nYedikten sonra fotoğrafını gönder 📸";
-                                    let _ = whatsapp.send_message(&user.phone_number, msg).await;
+                                    // Bugün akşam yemeği kaydedilmiş mi kontrol et
+                                    let today = now_user.date_naive();
+                                    if let Ok(todays_meals) = db.get_todays_meal_types(&user.phone_number, today).await {
+                                        let has_dinner = todays_meals.iter().any(|m| matches!(m, crate::models::MealType::Dinner));
 
-                                    // Log reminder
-                                    let _ = db.log_conversation(
-                                        &user.phone_number,
-                                        ConversationDirection::Outgoing,
-                                        MessageType::Reminder,
-                                        msg,
-                                        Some(serde_json::json!({"reminder_type": "dinner", "time": dinner_time})),
-                                    ).await;
+                                        if has_dinner {
+                                            log::debug!("⏭️ Skipping dinner reminder for {} - already logged today", user.phone_number);
+                                        } else {
+                                            let msg = "🌙 *Akşam yemeği zamanı!*\n\nYedikten sonra fotoğrafını gönder 📸";
+                                            let _ = whatsapp.send_message(&user.phone_number, msg).await;
 
-                                    log::info!("📤 Sent dinner reminder to {} ({})", user.phone_number, user.timezone);
+                                            // Log reminder
+                                            let _ = db.log_conversation(
+                                                &user.phone_number,
+                                                ConversationDirection::Outgoing,
+                                                MessageType::Reminder,
+                                                msg,
+                                                Some(serde_json::json!({"reminder_type": "dinner", "time": dinner_time})),
+                                            ).await;
+
+                                            log::info!("📤 Sent dinner reminder to {} ({})", user.phone_number, user.timezone);
+                                        }
+                                    }
                                 }
                             }
                         }

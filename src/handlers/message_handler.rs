@@ -100,9 +100,9 @@ impl MessageHandler {
             return Ok(());
         }
 
-        // "su" yazıldığında butonları göster
+        // "su" yazıldığında 200ml kaydet (butonlar çalışmadığı için direkt kayıt)
         if message_lower.trim() == "su" {
-            self.handle_water_buttons(from).await?;
+            self.handle_water_log(from, "200 ml içtim").await?;
             return Ok(());
         }
 
@@ -473,7 +473,7 @@ impl MessageHandler {
                         response.push_str(&format!(
                             "{}. {} • {:.0} kcal\n{}\n{}\n\n",
                             i + 1,
-                            meal.meal_type.to_string(),
+                            meal.meal_type,
                             meal.calories,
                             meal.description,
                             meal.created_at.format("%d.%m %H:%M")
@@ -530,11 +530,7 @@ impl MessageHandler {
                 self.handle_settings_command(from).await?;
                 true
             }
-            // Buton komutları - Su için hızlı butonlar
-            "buton" | "butonlar" | "buttons" | "button" => {
-                self.handle_water_buttons(from).await?;
-                true
-            }
+            // Buton komutları kaldırıldı - text tabanlı su kaydı çalışıyor
             // Saat komutları
             "saat" | "time" => {
                 self.handle_time_command(from, &parts).await?;
@@ -822,8 +818,9 @@ impl MessageHandler {
                    *🍽️ Nasıl Kullanılır?*\n\
                    • Yemek fotoğrafı gönder\n\
                    • ogun [açıklama] - Text ile kaydet\n\
-                   • su - Hızlı su kaydı menüsü 💧\n\
-                   • 250 ml içtim - Direkt su takibi\n\n\
+                   • su - 200ml kaydet 💧\n\
+                   • 250 ml içtim - Özel miktar\n\
+                   • 1, 2, 3 - Hızlı su kaydı (200/250/500ml)\n\n\
                    *📊 Ana Komutlar*\n\
                    rapor - Günlük özet (progress bar)\n\
                    geçmiş - Son 5 öğün\n\
@@ -1094,7 +1091,7 @@ impl MessageHandler {
                     "✅ *{} kaydedildi!*\n\n\
                      {}\n\
                      🔥 {:.0} kcal",
-                    meal_type.to_string(),
+                    meal_type,
                     fav.description,
                     fav.calories
                 )
@@ -1112,24 +1109,4 @@ impl MessageHandler {
         Ok(())
     }
 
-    /// Handle water buttons command - send interactive buttons for quick water logging
-    async fn handle_water_buttons(&self, from: &str) -> Result<()> {
-        log::info!("💧 Sending water buttons to {}", from);
-
-        let buttons = vec![
-            ("water_200".to_string(), "💧 200 ml".to_string()),
-            ("water_250".to_string(), "💧 250 ml".to_string()),
-            ("water_500".to_string(), "💧 500 ml".to_string()),
-        ];
-
-        self.whatsapp
-            .send_message_with_buttons(
-                from,
-                "💧 *Su Kaydı*\n\nNe kadar su içtin?",
-                buttons,
-            )
-            .await?;
-
-        Ok(())
-    }
 }

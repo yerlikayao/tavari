@@ -43,16 +43,19 @@ pub enum MealType {
     Snack,
 }
 
-impl MealType {
-    pub fn to_string(&self) -> String {
-        match self {
-            MealType::Breakfast => "Kahvaltı".to_string(),
-            MealType::Lunch => "Öğle Yemeği".to_string(),
-            MealType::Dinner => "Akşam Yemeği".to_string(),
-            MealType::Snack => "Ara Öğün".to_string(),
-        }
+impl std::fmt::Display for MealType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            MealType::Breakfast => "Kahvaltı",
+            MealType::Lunch => "Öğle Yemeği",
+            MealType::Dinner => "Akşam Yemeği",
+            MealType::Snack => "Ara Öğün",
+        };
+        write!(f, "{}", s)
     }
+}
 
+impl MealType {
     pub fn from_string(s: &str) -> Option<Self> {
         // Normalize Turkish characters: İ->i, I->ı before lowercase
         let normalized = s
@@ -116,12 +119,13 @@ pub enum ConversationDirection {
     Outgoing,  // Bot → User
 }
 
-impl ConversationDirection {
-    pub fn to_string(&self) -> String {
-        match self {
-            ConversationDirection::Incoming => "incoming".to_string(),
-            ConversationDirection::Outgoing => "outgoing".to_string(),
-        }
+impl std::fmt::Display for ConversationDirection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            ConversationDirection::Incoming => "incoming",
+            ConversationDirection::Outgoing => "outgoing",
+        };
+        write!(f, "{}", s)
     }
 }
 
