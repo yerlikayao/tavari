@@ -40,6 +40,7 @@ pub struct MessageBody {
     pub msg_type: String,
     pub text: Option<TextContent>,
     pub image: Option<MediaContent>,
+    pub interactive: Option<InteractiveResponse>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -57,6 +58,20 @@ pub struct MediaContent {
 pub struct ImageData {
     #[serde(rename = "mediaUrl")]
     pub media_url: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct InteractiveResponse {
+    #[serde(rename = "type")]
+    pub interactive_type: String,
+    #[serde(rename = "buttonReply")]
+    pub button_reply: Option<ButtonReplyData>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ButtonReplyData {
+    pub id: String,
+    pub title: String,
 }
 
 /// Handle incoming webhook from Bird.com
@@ -181,6 +196,27 @@ pub async fn handle_bird_webhook(
                         .await?;
                 } else {
                     log::warn!("⚠️ Image message received but no images in array");
+                }
+            }
+        }
+        "interactive" => {
+            if let Some(interactive) = webhook.payload.body.interactive {
+                if let Some(button_reply) = interactive.button_reply {
+                    log::info!("🔘 Button click from {}: id={}, title={}", from, button_reply.id, button_reply.title);
+
+                    // Handle water button clicks
+                    if button_reply.id.starts_with("water_") {
+                        // Extract amount from button ID (e.g., "water_200" -> "200")
+                        let amount = button_reply.id.strip_prefix("water_").unwrap_or("0");
+                        let water_message = format!("{} ml içtim", amount);
+                        log::info!("💧 Processing water button: {}", water_message);
+                        handler.handle_message(from, &water_message, false, None).await?;
+                    } else {
+                        // Unknown button, just handle as text
+                        handler.handle_message(from, &button_reply.title, false, None).await?;
+                    }
+                } else {
+                    log::warn!("⚠️ Interactive message received but no button reply");
                 }
             }
         }

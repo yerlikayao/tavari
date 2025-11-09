@@ -534,6 +534,11 @@ impl MessageHandler {
                 self.handle_settings_command(from).await?;
                 true
             }
+            // Buton komutları - Su için hızlı butonlar
+            "buton" | "butonlar" | "buttons" | "button" => {
+                self.handle_water_buttons(from).await?;
+                true
+            }
             // Saat komutları
             "saat" | "time" => {
                 self.handle_time_command(from, &parts).await?;
@@ -821,7 +826,8 @@ impl MessageHandler {
                    *🍽️ Nasıl Kullanılır?*\n\
                    • Yemek fotoğrafı gönder\n\
                    • ogun [açıklama] - Text ile kaydet\n\
-                   • 250 ml su içtim - Su takibi\n\n\
+                   • 250 ml su içtim - Su takibi\n\
+                   • buton - Hızlı su kaydı butonları 💧\n\n\
                    *📊 Ana Komutlar*\n\
                    rapor - Günlük özet (progress bar)\n\
                    geçmiş - Son 5 öğün\n\
@@ -1106,6 +1112,27 @@ impl MessageHandler {
                 )
             ).await?;
         }
+
+        Ok(())
+    }
+
+    /// Handle water buttons command - send interactive buttons for quick water logging
+    async fn handle_water_buttons(&self, from: &str) -> Result<()> {
+        log::info!("💧 Sending water buttons to {}", from);
+
+        let buttons = vec![
+            ("water_200".to_string(), "💧 200 ml".to_string()),
+            ("water_250".to_string(), "💧 250 ml".to_string()),
+            ("water_500".to_string(), "💧 500 ml".to_string()),
+        ];
+
+        self.whatsapp
+            .send_message_with_buttons(
+                from,
+                "💧 *Su Kaydı*\n\nNe kadar su içtin?",
+                buttons,
+            )
+            .await?;
 
         Ok(())
     }
