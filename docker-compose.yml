@@ -33,7 +33,7 @@ services:
       - ADMIN_TOKEN=${ADMIN_TOKEN}
       - RUST_LOG=${RUST_LOG}
     volumes:
-      - ./data:/app/data
+      - app_data:/app/data
     depends_on:
       postgres:
         condition: service_healthy
@@ -41,3 +41,4 @@ services:
 
 volumes:
   postgres_data:
+  app_data:
