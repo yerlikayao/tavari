@@ -110,6 +110,19 @@ impl MessageHandler {
             }
         }
 
+        // Quick water button responses (1, 2, 3)
+        let trimmed = message.trim();
+        if trimmed == "1" {
+            self.handle_water_log(from, "200 ml içtim").await?;
+            return Ok(());
+        } else if trimmed == "2" {
+            self.handle_water_log(from, "250 ml içtim").await?;
+            return Ok(());
+        } else if trimmed == "3" {
+            self.handle_water_log(from, "500 ml içtim").await?;
+            return Ok(());
+        }
+
         // Su tüketimi kaydı
         // "250 ml içtim", "su içtim", "500ml", "1 bardak su" gibi tüm varyasyonlar
         let has_water_keyword = message_lower.contains("su") || message_lower.contains("ml") || message_lower.contains("bardak");

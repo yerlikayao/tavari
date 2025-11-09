@@ -138,19 +138,19 @@ impl BirdComClient {
         message: &str,
         buttons: Vec<(String, String)>, // (id, title) pairs
     ) -> Result<()> {
-        if buttons.is_empty() || buttons.len() > 3 {
-            anyhow::bail!("Buttons must be between 1 and 3 items");
+        if buttons.is_empty() || buttons.len() > 10 {
+            anyhow::bail!("Buttons must be between 1 and 10 items for list");
         }
 
         let url = self.api_url(&format!("/channels/{}/messages", self.channel_id));
 
-        let interactive_buttons: Vec<InteractiveButton> = buttons
-            .into_iter()
-            .map(|(id, title)| InteractiveButton {
-                button_type: "reply".to_string(),
-                reply: ButtonReply { id, title },
-            })
-            .collect();
+        // For now, send a text message with numbered options
+        // Bird.com's "list" type requires complex structure - fallback to simple text
+        let mut button_text = format!("{}\n\n", message);
+        for (i, (id, title)) in buttons.iter().enumerate() {
+            button_text.push_str(&format!("{}. {}\n", i + 1, title));
+        }
+        button_text.push_str("\nYukarıdaki seçeneklerden birinin numarasını yazın veya direkt ml cinsinden yazın.");
 
         let payload = BirdMessage {
             receiver: Receiver {
@@ -158,16 +158,10 @@ impl BirdComClient {
                     identifier_value: to.to_string(),
                 }],
             },
-            body: Body::Interactive {
-                msg_type: "interactive".to_string(),
-                interactive: InteractiveContent {
-                    interactive_type: "button".to_string(),
-                    body: InteractiveBody {
-                        text: message.to_string(),
-                    },
-                    action: InteractiveAction {
-                        buttons: interactive_buttons,
-                    },
+            body: Body::Text {
+                msg_type: "text".to_string(),
+                text: TextContent {
+                    text: button_text,
                 },
             },
         };
