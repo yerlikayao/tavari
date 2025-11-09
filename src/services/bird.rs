@@ -138,69 +138,24 @@ impl BirdComClient {
         message: &str,
         buttons: Vec<(String, String)>, // (id, title) pairs
     ) -> Result<()> {
-        if buttons.is_empty() || buttons.len() > 10 {
-            anyhow::bail!("Buttons must be between 1 and 10 items for list");
+        if buttons.is_empty() {
+            anyhow::bail!("Buttons cannot be empty");
         }
 
-        let url = self.api_url(&format!("/channels/{}/messages", self.channel_id));
-
-        // Try Bird.com's "list" type for WhatsApp list messages
-        let rows: Vec<serde_json::Value> = buttons.iter().map(|(id, title)| {
-            serde_json::json!({
-                "id": id,
-                "title": title,
-                "description": ""
-            })
-        }).collect();
-
-        let payload = serde_json::json!({
-            "receiver": {
-                "contacts": [{ "identifierValue": to }]
-            },
-            "body": {
-                "type": "list",
-                "list": {
-                    "header": "Su Kaydı 💧",
-                    "text": message,
-                    "buttonText": "Seç",
-                    "sections": [{
-                        "title": "Miktar Seçin",
-                        "rows": rows
-                    }]
-                }
-            }
-        });
-
-        log::info!("🔍 DEBUG - Sending list message to URL: {}", url);
-        log::info!("🔍 DEBUG - Payload: {}", serde_json::to_string_pretty(&payload)?);
-
-        let response = self
-            .client
-            .post(&url)
-            .header("Authorization", format!("AccessKey {}", self.api_key))
-            .header("Content-Type", "application/json")
-            .json(&payload)
-            .send()
-            .await?;
-
-        let status = response.status();
-        let response_text = response.text().await?;
-
-        log::info!("🔍 DEBUG - Response Status: {}", status);
-        log::info!("🔍 DEBUG - Response Body: {}", response_text);
-
-        if !status.is_success() {
-            anyhow::bail!("Bird.com API error ({}): {}", status, response_text);
+        // Bird.com doesn't properly support WhatsApp list messages
+        // So we'll send a simple text message with numbered options instead
+        let mut full_message = format!("{}\n\n", message);
+        
+        for (i, (_id, title)) in buttons.iter().enumerate() {
+            full_message.push_str(&format!("{}. {}\n", i + 1, title));
         }
+        
+        full_message.push_str("\nYanıt için sayı gönder (örn: 1)");
 
-        let result: BirdResponse = serde_json::from_str(&response_text)?;
-        log::info!(
-            "📤 OUTGOING INTERACTIVE MESSAGE - To: {} | Message ID: {} | Content: '{}' | Buttons: {}",
-            to,
-            result.id,
-            message,
-            "(interactive buttons)"
-        );
+        log::info!("💧 Sending water menu as text message to {}", to);
+        
+        // Use the standard send_message method
+        self.send_message(to, &full_message).await?;
 
         Ok(())
     }

@@ -25,29 +25,6 @@ impl MessageHandler {
         }
     }
 
-    /// Helper function to send message and log it
-    async fn send_and_log(
-        &self,
-        to: &str,
-        message: &str,
-        message_type: MessageType,
-        metadata: Option<serde_json::Value>,
-    ) -> Result<()> {
-        // Send message
-        self.whatsapp.send_message(to, message).await?;
-
-        // Log to database
-        let _ = self.db.log_conversation(
-            to,
-            ConversationDirection::Outgoing,
-            message_type,
-            message,
-            metadata,
-        ).await;
-
-        Ok(())
-    }
-
     pub async fn handle_message(
         &self,
         from: &str,

@@ -5,7 +5,7 @@ use axum::{
     routing::{get, post},
     Router, Json,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::sync::Arc;
 
 use crate::services::{AdminService, BirdComClient};
