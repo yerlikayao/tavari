@@ -161,7 +161,7 @@ impl BirdComClient {
                 "type": "list",
                 "list": {
                     "header": "Su Kaydı 💧",
-                    "body": message,
+                    "text": message,
                     "buttonText": "Seç",
                     "sections": [{
                         "title": "Miktar Seçin",
