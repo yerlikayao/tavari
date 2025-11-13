@@ -773,10 +773,12 @@
                 const activeClass = user.is_active ? 'badge-active' : 'badge-inactive';
                 const activeText = user.is_active ? 'Aktif' : 'İnaktif';
 
+                const userName = user.name ? ` (${escapeHtml(user.name)})` : '';
+
                 return `
                     <div class="user-card">
                         <div class="user-header">
-                            <div class="user-phone">${escapeHtml(user.phone_number)}</div>
+                            <div class="user-phone">${escapeHtml(user.phone_number)}${userName}</div>
                             <span class="badge ${activeClass}">${activeText}</span>
                         </div>
                         <div class="user-meta">Son Aktivite: ${lastActivity}</div>
@@ -805,6 +807,9 @@
                             <button class="btn ${user.is_active ? 'btn-danger' : 'btn-success'} btn-sm"
                                     onclick="toggleUserActive('${user.phone_number}')">
                                 ${user.is_active ? '🔴 Deaktive Et' : '🟢 Aktive Et'}
+                            </button>
+                            <button class="btn btn-danger btn-sm" onclick="resetUser('${user.phone_number}')">
+                                🔄 Sıfırla
                             </button>
                         </div>
                     </div>
@@ -1022,6 +1027,24 @@
                 await loadDashboard();
             } catch (error) {
                 alert('❌ Hata: ' + error.message);
+            }
+        }
+
+        // Reset User (delete all data)
+        async function resetUser(phone) {
+            if (!confirm(`⚠️ DİKKAT!\n\n${phone} numaralı kullanıcının:\n• Tüm yemek kayıtları\n• Tüm su kayıtları\n• Tüm mesaj geçmişi\n• Tüm favori yemekler\n\nSİLİNECEK ve kullanıcı başlangıç durumuna dönecek.\n\nBu işlem GERİ ALINAMAZ!\n\nEmin misiniz?`)) {
+                return;
+            }
+
+            try {
+                const result = await apiCall(`users/${phone}/reset`, {
+                    method: 'POST'
+                });
+
+                alert('✅ Kullanıcı sıfırlandı! Tüm veriler silindi ve onboarding\'e yönlendirilecek.');
+                await loadDashboard();
+            } catch (error) {
+                alert('❌ Sıfırlama hatası: ' + error.message);
             }
         }
 
