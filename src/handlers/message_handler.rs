@@ -3,7 +3,7 @@ use chrono::{Utc, Timelike};
 use std::sync::Arc;
 
 use crate::models::{ConversationDirection, Meal, MealType, MessageType, User, WaterLog};
-use crate::services::{Database, OpenRouterService, WhatsAppService};
+use crate::services::{Database, OpenRouterService, UserIntent, WhatsAppService};
 use crate::handlers::OnboardingHandler;
 
 pub struct MessageHandler {
@@ -117,67 +117,53 @@ impl MessageHandler {
             }
         }
 
-        // Quick water button responses (1, 2, 3)
+        // Quick water button responses (1, 2, 3) - sadece sayı ise
         let trimmed = message.trim();
         if trimmed == "1" {
-            self.handle_water_log(from, "200 ml içtim").await?;
+            self.handle_water_log_with_amount(from, 200).await?;
             return Ok(());
         } else if trimmed == "2" {
-            self.handle_water_log(from, "250 ml içtim").await?;
+            self.handle_water_log_with_amount(from, 250).await?;
             return Ok(());
         } else if trimmed == "3" {
-            self.handle_water_log(from, "500 ml içtim").await?;
+            self.handle_water_log_with_amount(from, 500).await?;
             return Ok(());
         }
 
-        // "su" yazıldığında 200ml kaydet (butonlar çalışmadığı için direkt kayıt)
-        if message_lower.trim() == "su" {
-            self.handle_water_log(from, "200 ml içtim").await?;
-            return Ok(());
-        }
-
-        // Su tüketimi kaydı
-        // "250 ml içtim", "su içtim", "500ml", "1 bardak su" gibi tüm varyasyonlar
-        let has_water_keyword = message_lower.contains("su") || message_lower.contains("ml") || message_lower.contains("bardak");
-        let has_consumed = message_lower.contains("içtim") || message_lower.contains("içim");
-
-        if (has_water_keyword && has_consumed) || (message_lower.contains("ml") && message_lower.len() < 20) {
-            self.handle_water_log(from, message).await?;
-            return Ok(());
-        }
-
-        // Akıllı komut tespiti - slash olsun olmasın çalışır
+        // Önce bilinen komutları dene
         if self.try_handle_smart_command(from, &message_lower).await? {
             return Ok(());
         }
 
-        // Geçersiz komut - AI'ya danış ve öneri al
-        log::info!("🤔 Invalid command received: '{}', asking AI for suggestion", message);
-        match self.openai.suggest_command(message).await {
-            Ok(Some(suggested_command)) => {
-                // AI bir komut önerdi
-                log::info!("💡 AI suggested command '{}' for input '{}'", suggested_command, message);
-
-                // Komutu bekletmeye al
-                self.db.set_pending_command(from, &suggested_command).await?;
-
-                // Kullanıcıya onay sor
-                let confirmation_msg = format!(
-                    "🤔 '{}' komutunu mu demek istedin?\n\n\
-                     1 - Evet\n\
-                     0 - Hayır",
-                    suggested_command
-                );
-                self.whatsapp.send_message(from, &confirmation_msg).await?;
+        // Bilinen komut değilse, AI ile kullanıcının ne yapmak istediğini anla
+        log::info!("🧠 Using AI to detect user intent for: '{}'", message);
+        match self.openai.detect_user_intent(message).await {
+            Ok(UserIntent::LogMeal(meal_description)) => {
+                // Kullanıcı yemek kaydetmek istiyor
+                log::info!("🍽️ User wants to log meal: {}", meal_description);
+                self.handle_text_meal(from, &meal_description).await?;
             }
-            Ok(None) => {
-                // AI öneri bulamadı veya normal konuşma - yardım mesajı göster
-                log::info!("ℹ️ AI could not suggest a command, showing help message");
+            Ok(UserIntent::LogWater(amount)) => {
+                // Kullanıcı su içtiğini kaydetmek istiyor
+                log::info!("💧 User wants to log water: {} ml", amount);
+                self.handle_water_log_with_amount(from, amount).await?;
+            }
+            Ok(UserIntent::RunCommand(command)) => {
+                // Kullanıcı bir komut çalıştırmak istiyor
+                log::info!("⚙️ User wants to run command: {}", command);
+                if !self.try_handle_smart_command(from, &command).await? {
+                    // Komut bulunamadıysa yardım göster
+                    self.send_help_message(from).await?;
+                }
+            }
+            Ok(UserIntent::Unknown) => {
+                // AI belirsiz, yardım mesajı göster
+                log::info!("❓ AI couldn't determine intent, showing help");
                 self.send_help_message(from).await?;
             }
             Err(e) => {
-                // AI hatası - direkt yardım mesajı göster
-                log::warn!("⚠️ AI command suggestion failed: {}", e);
+                // AI hatası - yardım mesajı göster
+                log::warn!("⚠️ AI intent detection failed: {}", e);
                 self.send_help_message(from).await?;
             }
         }
@@ -428,10 +414,7 @@ impl MessageHandler {
         Ok(())
     }
 
-    async fn handle_water_log(&self, from: &str, message: &str) -> Result<()> {
-        // Mesajdan ml miktarını çıkar
-        let amount = self.parse_water_amount(message);
-
+    async fn handle_water_log_with_amount(&self, from: &str, amount: i32) -> Result<()> {
         let water_log = WaterLog {
             id: None,
             user_phone: from.to_string(),
@@ -453,8 +436,7 @@ impl MessageHandler {
         let response = format!(
             "💧 *{} ml kaydedildi!*\n\n\
              Bugün: {} ml / {} ml\n\
-             Kalan: {} ml\n\n\
-             💡 Hızlıca kaydet: 250 ml su içtim",
+             Kalan: {} ml",
             amount,
             stats.total_water_ml,
             water_goal,
@@ -464,28 +446,6 @@ impl MessageHandler {
         self.whatsapp.send_message(from, &response).await?;
 
         Ok(())
-    }
-
-    fn parse_water_amount(&self, message: &str) -> i32 {
-        // Basit parsing - "250 ml", "1 bardak", "200ml", "1000 ml" vb.
-        if message.contains("bardak") {
-            return 250; // 1 bardak = ~250ml
-        }
-
-        // "ml" veya "ML" kelimesini kaldır
-        let cleaned = message.replace("ml", " ").replace("ML", " ");
-
-        // Sayıyı bul
-        let words: Vec<&str> = cleaned.split_whitespace().collect();
-        for word in words {
-            if let Ok(amount) = word.parse::<i32>() {
-                if amount > 0 && amount <= 5000 {  // Limit 5000ml'ye çıkarıldı
-                    return amount;
-                }
-            }
-        }
-
-        200 // varsayılan (kullanıcı sadece "su" yazarsa)
     }
 
     /// Akıllı komut tespiti - slash olsun olmasın komutları tanır
@@ -623,20 +583,6 @@ impl MessageHandler {
             // Favori yemekler komutları
             "favori" | "favoriler" | "favorite" | "favorites" | "fav" => {
                 self.handle_favorite_meals_command(from, &parts).await?;
-                true
-            }
-            // Öğün kayıt komutları (text-based meal logging)
-            "ogun" | "yemek" | "meal" | "food" => {
-                if parts.len() < 2 {
-                    self.whatsapp.send_message(
-                        from,
-                        "❌ Kullanım: ogun [yemek açıklaması]\n\nÖrnek: ogun tavuk göğsü ve salata"
-                    ).await?;
-                } else {
-                    // Tüm kelime parçalarını birleştir (ilk kelime hariç)
-                    let description = parts[1..].join(" ");
-                    self.handle_text_meal(from, &description).await?;
-                }
                 true
             }
             // Check for quick favorite patterns (fav1, fav2, etc.)
@@ -874,21 +820,26 @@ impl MessageHandler {
 
     async fn send_help_message(&self, to: &str) -> Result<()> {
         let help = "📱 *Beslenme Takip Botu*\n\n\
-                   *🍽️ Nasıl Kullanılır?*\n\
-                   • Yemek fotoğrafı gönder\n\
-                   • ogun [açıklama] - Text ile kaydet\n\
-                   • su - 200ml kaydet 💧\n\
-                   • 250 ml içtim - Özel miktar\n\
-                   • 1, 2, 3 - Hızlı su kaydı (200/250/500ml)\n\n\
+                   *🍽️ Yemek Kaydet (Doğal Dil)*\n\
+                   Sadece yaz:\n\
+                   • \"kahvaltı yaptım\"\n\
+                   • \"pizza yedim\"\n\
+                   • \"tavuk göğsü ve salata\"\n\
+                   • Fotoğraf gönder\n\n\
+                   *💧 Su Kaydet (Doğal Dil)*\n\
+                   Sadece yaz:\n\
+                   • \"su içtim\"\n\
+                   • \"250 ml içtim\"\n\
+                   • \"1 bardak su\"\n\
+                   • 1, 2, 3 (200/250/500ml)\n\n\
                    *📊 Ana Komutlar*\n\
-                   rapor - Günlük özet (progress bar)\n\
+                   rapor - Günlük özet\n\
                    geçmiş - Son 5 öğün\n\
                    tavsiye - AI beslenme önerisi\n\
                    ayarlar - Tüm ayarlar\n\n\
                    *⭐ Favori Yemekler*\n\
                    favori - Liste görüntüle\n\
                    favori ekle fav1 Tavuklu pilav\n\
-                   favori sil fav1\n\
                    fav1 - Hızlı kayıt\n\n\
                    *🎯 Hedefler*\n\
                    kalorihedefi 2500\n\
@@ -898,7 +849,7 @@ impl MessageHandler {
                    saat kahvalti 09:00\n\
                    suaraligi 120\n\
                    timezone Europe/Istanbul\n\n\
-                   *💡 İpucu:* Komutlarda '/' kullanmana gerek yok!";
+                   *💡 İpucu:* Normal konuşarak mesaj at!";
 
         self.whatsapp.send_message(to, help).await?;
         Ok(())

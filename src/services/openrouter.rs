@@ -3,6 +3,14 @@ use base64::{engine::general_purpose, Engine};
 use serde::{Deserialize, Serialize};
 use std::fs;
 
+#[derive(Debug, Clone)]
+pub enum UserIntent {
+    LogMeal(String),      // Yemek açıklaması
+    LogWater(i32),        // Su miktarı (ml)
+    RunCommand(String),   // Komut adı
+    Unknown,              // Belirsiz/normal konuşma
+}
+
 #[derive(Debug, Serialize)]
 struct ChatMessage {
     role: String,
@@ -555,6 +563,101 @@ impl OpenRouterService {
         Ok(clean_advice)
     }
 
+    /// Kullanıcının mesajını analiz edip ne yapmak istediğini belirle (doğal dil işleme)
+    pub async fn detect_user_intent(&self, user_input: &str) -> Result<UserIntent> {
+        log::info!("🧠 Detecting user intent for: {}", user_input);
+
+        let messages = vec![ChatMessage {
+            role: "user".to_string(),
+            content: vec![ContentPart::Text {
+                content_type: "text".to_string(),
+                text: format!(
+                    "Sen bir akıllı beslenme asistanısın. Kullanıcının mesajını analiz et ve ne yapmak istediğini anla.\n\
+                     \n\
+                     KULLANICI MESAJI: \"{}\"\n\
+                     \n\
+                     ANALİZ ADI:\n\
+                     1. Kullanıcı ne yapmak istiyor?\n\
+                     2. Yemek mi kaydedecek? (kahvaltı yaptım, öğle yemeği yedim, biftek yedim, pizza, vb.)\n\
+                     3. Su mu içti? (su içtim, 250ml içtim, bardak su, vb.)\n\
+                     4. Bir komut mu çalıştırmak istiyor? (rapor, ayarlar, yardım, vb.)\n\
+                     \n\
+                     CEVAP FORMATI (TEK SATIR, AÇIKLAMA YAPMA):\n\
+                     - Yemek kaydı: MEAL:[yemek açıklaması]\n\
+                     - Su kaydı: WATER:[miktar ml]\n\
+                     - Komut: COMMAND:[komut adı]\n\
+                     - Belirsiz: UNKNOWN\n\
+                     \n\
+                     ÖRNEKLER:\n\
+                     \"kahvaltı yaptım\" -> MEAL:kahvaltı\n\
+                     \"öğle yemeği yedim\" -> MEAL:öğle yemeği\n\
+                     \"tavuk göğsü ve salata\" -> MEAL:tavuk göğsü ve salata\n\
+                     \"pizza yedim\" -> MEAL:pizza\n\
+                     \"biftek\" -> MEAL:biftek\n\
+                     \"250 ml su içtim\" -> WATER:250\n\
+                     \"su içtim\" -> WATER:200\n\
+                     \"1 bardak su\" -> WATER:250\n\
+                     \"500ml\" -> WATER:500\n\
+                     \"rapor\" -> COMMAND:rapor\n\
+                     \"ayarlar\" -> COMMAND:ayarlar\n\
+                     \"merhaba\" -> UNKNOWN\n\
+                     \"nasılsın\" -> UNKNOWN",
+                    user_input
+                ),
+            }],
+        }];
+
+        let request = ChatRequest {
+            model: self.model.clone(),
+            messages,
+            max_tokens: 50,
+        };
+
+        log::info!("📤 Sending intent detection request to OpenRouter");
+
+        let response = self
+            .client
+            .post("https://openrouter.ai/api/v1/chat/completions")
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .header("HTTP-Referer", "https://github.com/tavari-bot")
+            .header("X-Title", "Tavari Nutrition Bot")
+            .json(&request)
+            .send()
+            .await?;
+
+        let status = response.status();
+        log::info!("📥 OpenRouter response status: {}", status);
+
+        if !status.is_success() {
+            let error_text = response.text().await?;
+            log::error!("❌ OpenRouter API error ({}): {}", status, error_text);
+            return Ok(UserIntent::Unknown);
+        }
+
+        let chat_response: ChatResponse = response.json().await?;
+
+        if chat_response.choices.is_empty() {
+            log::warn!("❌ OpenRouter returned empty choices for intent detection");
+            return Ok(UserIntent::Unknown);
+        }
+
+        let response_text = chat_response.choices[0].message.content.trim();
+        log::info!("💡 AI detected intent: {}", response_text);
+
+        // Parse the response
+        if let Some(meal_desc) = response_text.strip_prefix("MEAL:") {
+            Ok(UserIntent::LogMeal(meal_desc.to_string()))
+        } else if let Some(water_str) = response_text.strip_prefix("WATER:") {
+            let amount = water_str.parse::<i32>().unwrap_or(200);
+            Ok(UserIntent::LogWater(amount))
+        } else if let Some(cmd) = response_text.strip_prefix("COMMAND:") {
+            Ok(UserIntent::RunCommand(cmd.to_string()))
+        } else {
+            Ok(UserIntent::Unknown)
+        }
+    }
+
     /// AI ile geçersiz komutu analiz edip en yakın geçerli komutu öner
     pub async fn suggest_command(&self, user_input: &str) -> Result<Option<String>> {
         log::info!("🤖 Suggesting command for invalid input: {}", user_input);
@@ -579,7 +682,6 @@ impl OpenRouterService {
                      10. saat [öğün] [saat] - Öğün saati ayarla (kahvalti/ogle/aksam)\n\
                      11. suaraligi [dakika] - Su hatırlatma aralığı (dakika)\n\
                      12. timezone [bölge] - Zaman dilimi\n\
-                     13. ogun [açıklama] - Yemek kaydet\n\
                      \n\
                      KULLANICI MESAJI: \"{}\"\n\
                      \n\
