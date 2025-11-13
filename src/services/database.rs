@@ -21,6 +21,8 @@ impl Database {
     }
 
     async fn init_tables(&self) -> Result<()> {
+        log::info!("🔧 Initializing database tables and running migrations...");
+
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS users (
@@ -170,6 +172,14 @@ impl Database {
                 ) THEN
                     ALTER TABLE users ADD COLUMN is_active BOOLEAN DEFAULT TRUE;
                 END IF;
+
+                -- Add pending_command column if not exists (for AI command suggestions)
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name='users' AND column_name='pending_command'
+                ) THEN
+                    ALTER TABLE users ADD COLUMN pending_command TEXT DEFAULT NULL;
+                END IF;
             END $$;
             "#,
         )
@@ -200,6 +210,8 @@ impl Database {
         sqlx::query("UPDATE users SET is_active = TRUE WHERE is_active IS NULL")
             .execute(&self.pool)
             .await?;
+
+        log::info!("✅ Database initialization and migrations completed successfully");
 
         Ok(())
     }
@@ -283,9 +295,9 @@ impl Database {
                 pending_command: row.get(19),
             }),
             Ok(None) => None,
-            Err(e) if e.to_string().contains("pending_command") => {
-                // Column doesn't exist yet, use legacy query
-                log::warn!("⚠️ pending_command column not found, using legacy query");
+            Err(e) if e.to_string().contains("pending_command") || e.to_string().contains("column") => {
+                // Column doesn't exist yet, use legacy query (migration will add it on next restart)
+                log::debug!("pending_command column not found, using legacy query");
                 sqlx::query(
                     r#"
                     SELECT phone_number, created_at, onboarding_completed, onboarding_step,
@@ -369,9 +381,9 @@ impl Database {
                     pending_command: row.get(19),
                 })
                 .collect(),
-            Err(e) if e.to_string().contains("pending_command") => {
+            Err(e) if e.to_string().contains("pending_command") || e.to_string().contains("column") => {
                 // Column doesn't exist yet, use legacy query
-                log::warn!("⚠️ pending_command column not found in get_all_users, using legacy query");
+                log::debug!("pending_command column not found in get_all_users, using legacy query");
                 sqlx::query(
                     r#"
                     SELECT phone_number, created_at, onboarding_completed, onboarding_step,
@@ -840,9 +852,9 @@ impl Database {
 
         match result {
             Ok(_) => Ok(()),
-            Err(e) if e.to_string().contains("pending_command") => {
-                log::warn!("⚠️ Cannot set pending_command, column doesn't exist yet. Run migration.");
-                Ok(()) // Silently ignore, feature just won't work until migration
+            Err(e) if e.to_string().contains("pending_command") || e.to_string().contains("column") => {
+                log::debug!("Cannot set pending_command, column doesn't exist yet (will be added on restart)");
+                Ok(()) // Silently ignore, migration will add column on next restart
             }
             Err(e) => Err(e.into()),
         }
@@ -858,8 +870,8 @@ impl Database {
 
         match result {
             Ok(_) => Ok(()),
-            Err(e) if e.to_string().contains("pending_command") => {
-                log::warn!("⚠️ Cannot clear pending_command, column doesn't exist yet. Run migration.");
+            Err(e) if e.to_string().contains("pending_command") || e.to_string().contains("column") => {
+                log::debug!("Cannot clear pending_command, column doesn't exist yet (will be added on restart)");
                 Ok(()) // Silently ignore
             }
             Err(e) => Err(e.into()),
@@ -1038,9 +1050,9 @@ impl Database {
                     pending_command: row.get(19),
                 })
                 .collect(),
-            Err(e) if e.to_string().contains("pending_command") => {
+            Err(e) if e.to_string().contains("pending_command") || e.to_string().contains("column") => {
                 // Column doesn't exist yet, use legacy query
-                log::warn!("⚠️ pending_command column not found in get_active_users, using legacy query");
+                log::debug!("pending_command column not found in get_active_users, using legacy query");
                 sqlx::query(
                     r#"
                     SELECT phone_number, created_at, onboarding_completed, onboarding_step,
