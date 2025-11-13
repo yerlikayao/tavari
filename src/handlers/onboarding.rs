@@ -45,7 +45,11 @@ impl OnboardingHandler {
     async fn start_onboarding(&self, user: &User) -> Result<()> {
         let welcome_msg = "🍽️ *Hoş geldin!*\n\n\
 Beslenme takibini kişiselleştirmek için öğün saatlerini öğrenmeliyim.\n\n\
-*Kahvaltı saatin?*\nÖrnek: 09:00";
+*Genelde kahvaltını ne zaman yaparsın?*\n\
+Normal konuşarak yaz:\n\
+• \"sabah 9'da\"\n\
+• \"09:00\"\n\
+• \"saat 9 gibi\"";
 
         self.whatsapp.send_message(&user.phone_number, welcome_msg).await?;
 
@@ -66,10 +70,16 @@ Beslenme takibini kişiselleştirmek için öğün saatlerini öğrenmeliyim.\n\
     }
 
     async fn save_breakfast_time(&self, user: &User, time: &str) -> Result<()> {
-        if self.validate_time_format(time) {
-            self.db.update_meal_time(&user.phone_number, "breakfast", time).await?;
+        let parsed_time = self.parse_natural_time(time);
 
-            let msg = format!("✅ Kahvaltı: {}\n\n*Öğle yemeği saatin?*\nÖrnek: 13:00", time);
+        if let Some(formatted_time) = parsed_time {
+            self.db.update_meal_time(&user.phone_number, "breakfast", &formatted_time).await?;
+
+            let msg = format!("✅ Kahvaltı: {}\n\n*Öğle yemeğini ne zaman yersin?*\n\
+Normal konuşarak yaz:\n\
+• \"öğlen 1'de\"\n\
+• \"13:00\"\n\
+• \"saat 13 gibi\"", formatted_time);
 
             self.whatsapp.send_message(&user.phone_number, &msg).await?;
 
@@ -84,7 +94,7 @@ Beslenme takibini kişiselleştirmek için öğün saatlerini öğrenmeliyim.\n\
 
             self.db.update_onboarding_step(&user.phone_number, Some("lunch_time".to_string())).await?;
         } else {
-            let msg = "❌ Geçersiz format\n\nHH:MM olmalı\nÖrnek: 09:00";
+            let msg = "❌ Saati anlayamadım\n\nÖrnekler:\n• \"sabah 9'da\"\n• \"09:00\"\n• \"saat 9 gibi\"";
 
             self.whatsapp.send_message(&user.phone_number, msg).await?;
 
@@ -101,10 +111,16 @@ Beslenme takibini kişiselleştirmek için öğün saatlerini öğrenmeliyim.\n\
     }
 
     async fn save_lunch_time(&self, user: &User, time: &str) -> Result<()> {
-        if self.validate_time_format(time) {
-            self.db.update_meal_time(&user.phone_number, "lunch", time).await?;
+        let parsed_time = self.parse_natural_time(time);
 
-            let msg = format!("✅ Öğle: {}\n\n*Akşam yemeği saatin?*\nÖrnek: 19:00", time);
+        if let Some(formatted_time) = parsed_time {
+            self.db.update_meal_time(&user.phone_number, "lunch", &formatted_time).await?;
+
+            let msg = format!("✅ Öğle: {}\n\n*Akşam yemeğini ne zaman yersin?*\n\
+Normal konuşarak yaz:\n\
+• \"akşam 7'de\"\n\
+• \"19:00\"\n\
+• \"saat 19 gibi\"", formatted_time);
 
             self.whatsapp.send_message(&user.phone_number, &msg).await?;
 
@@ -119,7 +135,7 @@ Beslenme takibini kişiselleştirmek için öğün saatlerini öğrenmeliyim.\n\
 
             self.db.update_onboarding_step(&user.phone_number, Some("dinner_time".to_string())).await?;
         } else {
-            let msg = "❌ Geçersiz format\n\nHH:MM olmalı\nÖrnek: 09:00";
+            let msg = "❌ Saati anlayamadım\n\nÖrnekler:\n• \"öğlen 1'de\"\n• \"13:00\"\n• \"saat 13 gibi\"";
 
             self.whatsapp.send_message(&user.phone_number, msg).await?;
 
@@ -136,12 +152,14 @@ Beslenme takibini kişiselleştirmek için öğün saatlerini öğrenmeliyim.\n\
     }
 
     async fn save_dinner_time(&self, user: &User, time: &str) -> Result<()> {
-        if self.validate_time_format(time) {
-            self.db.update_meal_time(&user.phone_number, "dinner", time).await?;
+        let parsed_time = self.parse_natural_time(time);
+
+        if let Some(formatted_time) = parsed_time {
+            self.db.update_meal_time(&user.phone_number, "dinner", &formatted_time).await?;
             self.db.update_onboarding_step(&user.phone_number, None).await?;
             self.db.complete_onboarding(&user.phone_number).await?;
         } else {
-            let msg = "❌ Geçersiz format\n\nHH:MM olmalı\nÖrnek: 09:00";
+            let msg = "❌ Saati anlayamadım\n\nÖrnekler:\n• \"akşam 7'de\"\n• \"19:00\"\n• \"saat 19 gibi\"";
 
             self.whatsapp.send_message(&user.phone_number, msg).await?;
 
@@ -192,6 +210,44 @@ Beslenme takibini kişiselleştirmek için öğün saatlerini öğrenmeliyim.\n\
 
         log::info!("✅ Onboarding completed for user: {}", user.phone_number);
         Ok(())
+    }
+
+    /// Parse natural language time input to HH:MM format
+    /// Accepts formats like: "9", "09:00", "sabah 9", "saat 9 gibi", "9'da"
+    fn parse_natural_time(&self, input: &str) -> Option<String> {
+        let input = input.trim().to_lowercase();
+
+        // First try exact HH:MM format
+        if self.validate_time_format(&input) {
+            return Some(input);
+        }
+
+        // Extract numbers from the input
+        let numbers: Vec<u32> = input
+            .split(|c: char| !c.is_numeric())
+            .filter_map(|s| s.parse::<u32>().ok())
+            .collect();
+
+        if numbers.is_empty() {
+            return None;
+        }
+
+        // Take the first number as the hour
+        let hour = numbers[0];
+
+        // If there's a second number, use it as minutes, otherwise default to 00
+        let minute = if numbers.len() > 1 {
+            numbers[1]
+        } else {
+            0
+        };
+
+        // Validate the parsed time
+        if hour < 24 && minute < 60 {
+            Some(format!("{:02}:{:02}", hour, minute))
+        } else {
+            None
+        }
     }
 
     fn validate_time_format(&self, time: &str) -> bool {

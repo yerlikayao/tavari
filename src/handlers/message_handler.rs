@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chrono::{Utc, Timelike};
+use chrono::{Utc, Timelike, Datelike};
 use std::sync::Arc;
 
 use crate::models::{ConversationDirection, Meal, MealType, MessageType, User, WaterLog};
@@ -458,6 +458,53 @@ impl MessageHandler {
 
         // Komut eşleştirmeleri - Türkçe karakterleri normalize et
         let matched = match *main_word {
+            // Haftalık özet
+            "haftalik" | "haftalık" | "weekly" | "hafta" | "week" => {
+                let user = self.db.get_user(from).await?.ok_or_else(|| anyhow::anyhow!("User not found"))?;
+                let user_tz: chrono_tz::Tz = user.timezone.parse().unwrap_or(chrono_tz::Europe::Istanbul);
+                let today = Utc::now().with_timezone(&user_tz).date_naive();
+
+                let mut response = "📅 *Haftalık Özet*\n\n".to_string();
+                let mut total_calories = 0.0;
+                let mut total_water = 0;
+
+                for i in 0..7 {
+                    let date = today - chrono::Duration::days(i);
+                    let stats = self.db.get_daily_stats(from, date).await?;
+
+                    total_calories += stats.total_calories;
+                    total_water += stats.total_water_ml as i32;
+
+                    let day_name = match date.weekday() {
+                        chrono::Weekday::Mon => "Pzt",
+                        chrono::Weekday::Tue => "Sal",
+                        chrono::Weekday::Wed => "Çar",
+                        chrono::Weekday::Thu => "Per",
+                        chrono::Weekday::Fri => "Cum",
+                        chrono::Weekday::Sat => "Cmt",
+                        chrono::Weekday::Sun => "Paz",
+                    };
+
+                    response.push_str(&format!(
+                        "{} {}: {:.0} kcal • {} ml\n",
+                        day_name,
+                        date.format("%d.%m"),
+                        stats.total_calories,
+                        stats.total_water_ml
+                    ));
+                }
+
+                let avg_calories = total_calories / 7.0;
+                let avg_water = total_water / 7;
+
+                response.push_str(&format!("\n📊 *Ortalamalar*\n"));
+                response.push_str(&format!("🍽️ Kalori: {:.0} kcal/gün\n", avg_calories));
+                response.push_str(&format!("💧 Su: {} ml/gün\n\n", avg_water));
+                response.push_str("💡 Detaylı tavsiye için 'tavsiye' yaz");
+
+                self.whatsapp.send_message(from, &response).await?;
+                true
+            }
             // Rapor komutları
             "rapor" | "report" | "özet" | "ozet" | "summary" => {
                 let user = self.db.get_user(from).await?.ok_or_else(|| anyhow::anyhow!("User not found"))?;
@@ -480,24 +527,39 @@ impl MessageHandler {
                 self.send_help_message(from).await?;
                 true
             }
-            // Geçmiş komutları
+            // Geçmiş komutları - enhanced with water logs and summary
             "gecmis" | "geçmiş" | "history" | "tarihçe" | "tarihce" => {
+                let user = self.db.get_user(from).await?.ok_or_else(|| anyhow::anyhow!("User not found"))?;
+                let user_tz: chrono_tz::Tz = user.timezone.parse().unwrap_or(chrono_tz::Europe::Istanbul);
+                let today = Utc::now().with_timezone(&user_tz).date_naive();
+
                 let meals = self.db.get_recent_meals(from, 5).await?;
+                let stats = self.db.get_daily_stats(from, today).await?;
+                let water_goal = user.daily_water_goal.unwrap_or(2000);
 
                 if meals.is_empty() {
                     self.whatsapp.send_message(from, "📜 Henüz kayıtlı öğün yok.").await?;
                 } else {
-                    let mut response = "📜 *Son 5 Öğün*\n\n".to_string();
+                    let mut response = "📜 *Son Aktiviteler*\n\n".to_string();
+
+                    // Show today's summary first
+                    response.push_str("📊 *Bugün*\n");
+                    response.push_str(&format!("🍽️ Kalori: {:.0} kcal\n", stats.total_calories));
+                    response.push_str(&format!("💧 Su: {} / {} ml\n\n", stats.total_water_ml, water_goal));
+
+                    response.push_str("🍽️ *Son Öğünler*\n\n");
                     for (i, meal) in meals.iter().enumerate() {
                         response.push_str(&format!(
-                            "{}. {} • {:.0} kcal\n{}\n{}\n\n",
+                            "{}. *{}* • {:.0} kcal\n{}\n📅 {}\n\n",
                             i + 1,
                             meal.meal_type,
                             meal.calories,
-                            meal.description,
+                            meal.description.lines().next().unwrap_or(&meal.description),
                             meal.created_at.format("%d.%m %H:%M")
                         ));
                     }
+
+                    response.push_str("💡 *İpucu:* Detaylı rapor için 'rapor' yaz");
                     self.whatsapp.send_message(from, &response).await?;
                 }
                 true
@@ -834,7 +896,8 @@ impl MessageHandler {
                    • 1, 2, 3 (200/250/500ml)\n\n\
                    *📊 Ana Komutlar*\n\
                    rapor - Günlük özet\n\
-                   geçmiş - Son 5 öğün\n\
+                   geçmiş - Son aktiviteler\n\
+                   haftalık - 7 günlük özet\n\
                    tavsiye - AI beslenme önerisi\n\
                    ayarlar - Tüm ayarlar\n\n\
                    *⭐ Favori Yemekler*\n\

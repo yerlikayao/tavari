@@ -18,11 +18,23 @@ pub struct UserStats {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WeeklyTrend {
+    pub day: String,
+    pub active_users: i64,
+    pub total_meals: i64,
+    pub avg_calories: f64,
+    pub total_water_ml: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AdminDashboardData {
     pub total_users: i64,
     pub active_users_today: i64,
     pub total_meals_today: i64,
     pub total_conversations_today: i64,
+    pub avg_calories_per_user_today: f64,
+    pub avg_water_per_user_today: i64,
+    pub weekly_trends: Vec<WeeklyTrend>,
     pub users: Vec<UserStats>,
 }
 
@@ -72,7 +84,7 @@ impl AdminService {
         Ok(stats)
     }
 
-    /// Get dashboard overview data
+    /// Get dashboard overview data with enhanced insights
     pub async fn get_dashboard_data(&self) -> Result<AdminDashboardData> {
         let user_stats = self.get_all_user_stats().await?;
         let total_users = user_stats.len() as i64;
@@ -97,13 +109,91 @@ impl AdminService {
             .map(|s| s.total_conversations)
             .sum();
 
+        // Calculate averages for today
+        let total_calories_today: f64 = user_stats.iter().map(|s| s.total_calories_today).sum();
+        let total_water_today: i64 = user_stats.iter().map(|s| s.total_water_today).sum();
+
+        let avg_calories_per_user_today = if total_users > 0 {
+            total_calories_today / total_users as f64
+        } else {
+            0.0
+        };
+
+        let avg_water_per_user_today = if total_users > 0 {
+            total_water_today / total_users
+        } else {
+            0
+        };
+
+        // Generate weekly trends
+        let weekly_trends = self.get_weekly_trends().await?;
+
         Ok(AdminDashboardData {
             total_users,
             active_users_today,
             total_meals_today,
             total_conversations_today,
+            avg_calories_per_user_today,
+            avg_water_per_user_today,
+            weekly_trends,
             users: user_stats,
         })
+    }
+
+    /// Get weekly trends for the dashboard
+    async fn get_weekly_trends(&self) -> Result<Vec<WeeklyTrend>> {
+        use chrono::Datelike;
+
+        let today = chrono::Utc::now().date_naive();
+        let mut trends = Vec::new();
+
+        for i in (0..7).rev() {
+            let date = today - chrono::Duration::days(i);
+            let users = self.db.get_all_users().await?;
+
+            let mut active_count = 0i64;
+            let mut total_meals = 0i64;
+            let mut total_calories = 0.0;
+            let mut total_water = 0i64;
+
+            for user in users {
+                let daily_stats = self.db.get_daily_stats(&user.phone_number, date).await?;
+
+                if daily_stats.meals_count > 0 || daily_stats.total_water_ml > 0 {
+                    active_count += 1;
+                }
+
+                total_meals += daily_stats.meals_count;
+                total_calories += daily_stats.total_calories;
+                total_water += daily_stats.total_water_ml;
+            }
+
+            let day_name = match date.weekday() {
+                chrono::Weekday::Mon => "Pzt",
+                chrono::Weekday::Tue => "Sal",
+                chrono::Weekday::Wed => "Çar",
+                chrono::Weekday::Thu => "Per",
+                chrono::Weekday::Fri => "Cum",
+                chrono::Weekday::Sat => "Cmt",
+                chrono::Weekday::Sun => "Paz",
+            };
+
+            let avg_calories = if active_count > 0 {
+                total_calories / active_count as f64
+            } else {
+                0.0
+            };
+
+            trends.push(WeeklyTrend {
+                day: format!("{} {}", day_name, date.format("%d.%m")),
+                active_users: active_count,
+                total_meals,
+                avg_calories,
+                total_water_ml: total_water,
+            });
+        }
+
+        Ok(trends)
     }
 
     /// Get total meals logged today across all users
