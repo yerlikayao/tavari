@@ -243,62 +243,24 @@ impl Database {
     }
 
     pub async fn get_user(&self, phone_number: &str) -> Result<Option<User>> {
-        let user = sqlx::query(
-            r#"
-            SELECT phone_number, created_at, onboarding_completed, onboarding_step,
-                   breakfast_reminder, lunch_reminder, dinner_reminder, water_reminder,
-                   breakfast_time, lunch_time, dinner_time, opted_in, timezone,
-                   water_reminder_interval, daily_water_goal, daily_calorie_goal,
-                   silent_hours_start, silent_hours_end, is_active
-            FROM users WHERE phone_number = $1
-            "#,
-        )
-        .bind(phone_number)
-        .fetch_optional(&self.pool)
-        .await?
-        .map(|row| User {
-            phone_number: row.get(0),
-            created_at: row.get(1),
-            onboarding_completed: row.get(2),
-            onboarding_step: row.get(3),
-            breakfast_reminder: row.get(4),
-            lunch_reminder: row.get(5),
-            dinner_reminder: row.get(6),
-            water_reminder: row.get(7),
-            breakfast_time: row.get(8),
-            lunch_time: row.get(9),
-            dinner_time: row.get(10),
-            opted_in: row.get(11),
-            timezone: row.get(12),
-            water_reminder_interval: row.get(13),
-            daily_water_goal: row.get(14),
-            daily_calorie_goal: row.get(15),
-            silent_hours_start: row.get(16),
-            silent_hours_end: row.get(17),
-            is_active: row.get(18),
-            pending_command: row.get(19),
-        });
-
-        Ok(user)
-    }
-
-    pub async fn get_all_users(&self) -> Result<Vec<User>> {
-        let rows = sqlx::query(
+        // Try to get pending_command, but fallback gracefully if column doesn't exist yet
+        let user_result = sqlx::query(
             r#"
             SELECT phone_number, created_at, onboarding_completed, onboarding_step,
                    breakfast_reminder, lunch_reminder, dinner_reminder, water_reminder,
                    breakfast_time, lunch_time, dinner_time, opted_in, timezone,
                    water_reminder_interval, daily_water_goal, daily_calorie_goal,
                    silent_hours_start, silent_hours_end, is_active, pending_command
-            FROM users
+            FROM users WHERE phone_number = $1
             "#,
         )
-        .fetch_all(&self.pool)
-        .await?;
+        .bind(phone_number)
+        .fetch_optional(&self.pool)
+        .await;
 
-        let users = rows
-            .into_iter()
-            .map(|row| User {
+        // If query fails (column doesn't exist), try without pending_command
+        let user = match user_result {
+            Ok(Some(row)) => Some(User {
                 phone_number: row.get(0),
                 created_at: row.get(1),
                 onboarding_completed: row.get(2),
@@ -319,8 +281,136 @@ impl Database {
                 silent_hours_end: row.get(17),
                 is_active: row.get(18),
                 pending_command: row.get(19),
-            })
-            .collect();
+            }),
+            Ok(None) => None,
+            Err(e) if e.to_string().contains("pending_command") => {
+                // Column doesn't exist yet, use legacy query
+                log::warn!("⚠️ pending_command column not found, using legacy query");
+                sqlx::query(
+                    r#"
+                    SELECT phone_number, created_at, onboarding_completed, onboarding_step,
+                           breakfast_reminder, lunch_reminder, dinner_reminder, water_reminder,
+                           breakfast_time, lunch_time, dinner_time, opted_in, timezone,
+                           water_reminder_interval, daily_water_goal, daily_calorie_goal,
+                           silent_hours_start, silent_hours_end, is_active
+                    FROM users WHERE phone_number = $1
+                    "#,
+                )
+                .bind(phone_number)
+                .fetch_optional(&self.pool)
+                .await?
+                .map(|row| User {
+                    phone_number: row.get(0),
+                    created_at: row.get(1),
+                    onboarding_completed: row.get(2),
+                    onboarding_step: row.get(3),
+                    breakfast_reminder: row.get(4),
+                    lunch_reminder: row.get(5),
+                    dinner_reminder: row.get(6),
+                    water_reminder: row.get(7),
+                    breakfast_time: row.get(8),
+                    lunch_time: row.get(9),
+                    dinner_time: row.get(10),
+                    opted_in: row.get(11),
+                    timezone: row.get(12),
+                    water_reminder_interval: row.get(13),
+                    daily_water_goal: row.get(14),
+                    daily_calorie_goal: row.get(15),
+                    silent_hours_start: row.get(16),
+                    silent_hours_end: row.get(17),
+                    is_active: row.get(18),
+                    pending_command: None, // Default to None if column doesn't exist
+                })
+            }
+            Err(e) => return Err(e.into()),
+        };
+
+        Ok(user)
+    }
+
+    pub async fn get_all_users(&self) -> Result<Vec<User>> {
+        // Try with pending_command first
+        let result = sqlx::query(
+            r#"
+            SELECT phone_number, created_at, onboarding_completed, onboarding_step,
+                   breakfast_reminder, lunch_reminder, dinner_reminder, water_reminder,
+                   breakfast_time, lunch_time, dinner_time, opted_in, timezone,
+                   water_reminder_interval, daily_water_goal, daily_calorie_goal,
+                   silent_hours_start, silent_hours_end, is_active, pending_command
+            FROM users
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await;
+
+        let users = match result {
+            Ok(rows) => rows
+                .into_iter()
+                .map(|row| User {
+                    phone_number: row.get(0),
+                    created_at: row.get(1),
+                    onboarding_completed: row.get(2),
+                    onboarding_step: row.get(3),
+                    breakfast_reminder: row.get(4),
+                    lunch_reminder: row.get(5),
+                    dinner_reminder: row.get(6),
+                    water_reminder: row.get(7),
+                    breakfast_time: row.get(8),
+                    lunch_time: row.get(9),
+                    dinner_time: row.get(10),
+                    opted_in: row.get(11),
+                    timezone: row.get(12),
+                    water_reminder_interval: row.get(13),
+                    daily_water_goal: row.get(14),
+                    daily_calorie_goal: row.get(15),
+                    silent_hours_start: row.get(16),
+                    silent_hours_end: row.get(17),
+                    is_active: row.get(18),
+                    pending_command: row.get(19),
+                })
+                .collect(),
+            Err(e) if e.to_string().contains("pending_command") => {
+                // Column doesn't exist yet, use legacy query
+                log::warn!("⚠️ pending_command column not found in get_all_users, using legacy query");
+                sqlx::query(
+                    r#"
+                    SELECT phone_number, created_at, onboarding_completed, onboarding_step,
+                           breakfast_reminder, lunch_reminder, dinner_reminder, water_reminder,
+                           breakfast_time, lunch_time, dinner_time, opted_in, timezone,
+                           water_reminder_interval, daily_water_goal, daily_calorie_goal,
+                           silent_hours_start, silent_hours_end, is_active
+                    FROM users
+                    "#,
+                )
+                .fetch_all(&self.pool)
+                .await?
+                .into_iter()
+                .map(|row| User {
+                    phone_number: row.get(0),
+                    created_at: row.get(1),
+                    onboarding_completed: row.get(2),
+                    onboarding_step: row.get(3),
+                    breakfast_reminder: row.get(4),
+                    lunch_reminder: row.get(5),
+                    dinner_reminder: row.get(6),
+                    water_reminder: row.get(7),
+                    breakfast_time: row.get(8),
+                    lunch_time: row.get(9),
+                    dinner_time: row.get(10),
+                    opted_in: row.get(11),
+                    timezone: row.get(12),
+                    water_reminder_interval: row.get(13),
+                    daily_water_goal: row.get(14),
+                    daily_calorie_goal: row.get(15),
+                    silent_hours_start: row.get(16),
+                    silent_hours_end: row.get(17),
+                    is_active: row.get(18),
+                    pending_command: None,
+                })
+                .collect()
+            }
+            Err(e) => return Err(e.into()),
+        };
 
         Ok(users)
     }
@@ -741,23 +831,39 @@ impl Database {
 
     /// Set pending command for user (waiting for confirmation)
     pub async fn set_pending_command(&self, phone_number: &str, command: &str) -> Result<()> {
-        sqlx::query("UPDATE users SET pending_command = $1 WHERE phone_number = $2")
+        // Try to set pending_command, but silently ignore if column doesn't exist
+        let result = sqlx::query("UPDATE users SET pending_command = $1 WHERE phone_number = $2")
             .bind(command)
             .bind(phone_number)
             .execute(&self.pool)
-            .await?;
+            .await;
 
-        Ok(())
+        match result {
+            Ok(_) => Ok(()),
+            Err(e) if e.to_string().contains("pending_command") => {
+                log::warn!("⚠️ Cannot set pending_command, column doesn't exist yet. Run migration.");
+                Ok(()) // Silently ignore, feature just won't work until migration
+            }
+            Err(e) => Err(e.into()),
+        }
     }
 
     /// Clear pending command for user
     pub async fn clear_pending_command(&self, phone_number: &str) -> Result<()> {
-        sqlx::query("UPDATE users SET pending_command = NULL WHERE phone_number = $1")
+        // Try to clear pending_command, but silently ignore if column doesn't exist
+        let result = sqlx::query("UPDATE users SET pending_command = NULL WHERE phone_number = $1")
             .bind(phone_number)
             .execute(&self.pool)
-            .await?;
+            .await;
 
-        Ok(())
+        match result {
+            Ok(_) => Ok(()),
+            Err(e) if e.to_string().contains("pending_command") => {
+                log::warn!("⚠️ Cannot clear pending_command, column doesn't exist yet. Run migration.");
+                Ok(()) // Silently ignore
+            }
+            Err(e) => Err(e.into()),
+        }
     }
 
     // ============================================================
@@ -891,7 +997,8 @@ impl Database {
 
     /// Get only active users (for reminders)
     pub async fn get_active_users(&self) -> Result<Vec<User>> {
-        let rows = sqlx::query(
+        // Try with pending_command first
+        let result = sqlx::query(
             r#"
             SELECT phone_number, created_at, onboarding_completed, onboarding_step,
                    breakfast_reminder, lunch_reminder, dinner_reminder, water_reminder,
@@ -903,33 +1010,77 @@ impl Database {
             "#,
         )
         .fetch_all(&self.pool)
-        .await?;
+        .await;
 
-        let users = rows
-            .into_iter()
-            .map(|row| User {
-                phone_number: row.get(0),
-                created_at: row.get(1),
-                onboarding_completed: row.get(2),
-                onboarding_step: row.get(3),
-                breakfast_reminder: row.get(4),
-                lunch_reminder: row.get(5),
-                dinner_reminder: row.get(6),
-                water_reminder: row.get(7),
-                breakfast_time: row.get(8),
-                lunch_time: row.get(9),
-                dinner_time: row.get(10),
-                opted_in: row.get(11),
-                timezone: row.get(12),
-                water_reminder_interval: row.get(13),
-                daily_water_goal: row.get(14),
-                daily_calorie_goal: row.get(15),
-                silent_hours_start: row.get(16),
-                silent_hours_end: row.get(17),
-                is_active: row.get(18),
-                pending_command: row.get(19),
-            })
-            .collect();
+        let users = match result {
+            Ok(rows) => rows
+                .into_iter()
+                .map(|row| User {
+                    phone_number: row.get(0),
+                    created_at: row.get(1),
+                    onboarding_completed: row.get(2),
+                    onboarding_step: row.get(3),
+                    breakfast_reminder: row.get(4),
+                    lunch_reminder: row.get(5),
+                    dinner_reminder: row.get(6),
+                    water_reminder: row.get(7),
+                    breakfast_time: row.get(8),
+                    lunch_time: row.get(9),
+                    dinner_time: row.get(10),
+                    opted_in: row.get(11),
+                    timezone: row.get(12),
+                    water_reminder_interval: row.get(13),
+                    daily_water_goal: row.get(14),
+                    daily_calorie_goal: row.get(15),
+                    silent_hours_start: row.get(16),
+                    silent_hours_end: row.get(17),
+                    is_active: row.get(18),
+                    pending_command: row.get(19),
+                })
+                .collect(),
+            Err(e) if e.to_string().contains("pending_command") => {
+                // Column doesn't exist yet, use legacy query
+                log::warn!("⚠️ pending_command column not found in get_active_users, using legacy query");
+                sqlx::query(
+                    r#"
+                    SELECT phone_number, created_at, onboarding_completed, onboarding_step,
+                           breakfast_reminder, lunch_reminder, dinner_reminder, water_reminder,
+                           breakfast_time, lunch_time, dinner_time, opted_in, timezone,
+                           water_reminder_interval, daily_water_goal, daily_calorie_goal,
+                           silent_hours_start, silent_hours_end, is_active
+                    FROM users
+                    WHERE is_active = TRUE
+                    "#,
+                )
+                .fetch_all(&self.pool)
+                .await?
+                .into_iter()
+                .map(|row| User {
+                    phone_number: row.get(0),
+                    created_at: row.get(1),
+                    onboarding_completed: row.get(2),
+                    onboarding_step: row.get(3),
+                    breakfast_reminder: row.get(4),
+                    lunch_reminder: row.get(5),
+                    dinner_reminder: row.get(6),
+                    water_reminder: row.get(7),
+                    breakfast_time: row.get(8),
+                    lunch_time: row.get(9),
+                    dinner_time: row.get(10),
+                    opted_in: row.get(11),
+                    timezone: row.get(12),
+                    water_reminder_interval: row.get(13),
+                    daily_water_goal: row.get(14),
+                    daily_calorie_goal: row.get(15),
+                    silent_hours_start: row.get(16),
+                    silent_hours_end: row.get(17),
+                    is_active: row.get(18),
+                    pending_command: None,
+                })
+                .collect()
+            }
+            Err(e) => return Err(e.into()),
+        };
 
         Ok(users)
     }
