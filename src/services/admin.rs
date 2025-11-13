@@ -249,4 +249,9 @@ impl AdminService {
     pub async fn toggle_user_active(&self, phone_number: &str) -> Result<bool> {
         self.db.toggle_user_active(phone_number).await
     }
+
+    /// Reset user completely - deletes all data and resets to fresh state
+    pub async fn reset_user(&self, phone_number: &str) -> Result<()> {
+        self.db.reset_user(phone_number).await
+    }
 }

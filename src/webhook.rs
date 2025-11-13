@@ -32,6 +32,8 @@ pub struct Sender {
 pub struct Contact {
     #[serde(rename = "identifierValue")]
     pub identifier_value: String,
+    #[serde(default)]
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -92,6 +94,13 @@ pub async fn handle_bird_webhook(
     log::info!("📨 Received webhook: event={}, id={}", webhook.event, webhook.payload.id);
 
     let from = &webhook.payload.sender.contact.identifier_value;
+    let sender_name = webhook.payload.sender.contact.name.as_deref();
+
+    // Update user's name if provided by WhatsApp
+    if let Some(name) = sender_name {
+        log::debug!("📝 Updating name for {}: {}", from, name);
+        let _ = handler.update_user_name(from, Some(name)).await;
+    }
 
     match webhook.payload.body.msg_type.as_str() {
         "text" => {

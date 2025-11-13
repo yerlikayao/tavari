@@ -25,6 +25,11 @@ impl MessageHandler {
         }
     }
 
+    /// Update user's name from WhatsApp profile
+    pub async fn update_user_name(&self, phone: &str, name: Option<&str>) -> Result<()> {
+        self.db.update_user_name(phone, name).await
+    }
+
     pub async fn handle_message(
         &self,
         from: &str,
@@ -204,6 +209,7 @@ impl MessageHandler {
         if self.db.get_user(phone).await?.is_none() {
             let user = User {
                 phone_number: phone.to_string(),
+                name: None,  // Will be updated from WhatsApp later
                 created_at: Utc::now(),
                 onboarding_completed: false,
                 onboarding_step: None,  // Onboarding handler başlatacak

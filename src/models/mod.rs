@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
     pub phone_number: String,
+    pub name: Option<String>,  // WhatsApp profil ismi
     pub created_at: DateTime<Utc>,
     pub onboarding_completed: bool,
     pub onboarding_step: Option<String>,

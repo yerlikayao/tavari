@@ -27,6 +27,7 @@ impl Database {
             r#"
             CREATE TABLE IF NOT EXISTS users (
                 phone_number TEXT PRIMARY KEY,
+                name TEXT,
                 created_at TIMESTAMPTZ NOT NULL,
                 onboarding_completed BOOLEAN DEFAULT FALSE,
                 onboarding_step TEXT,
@@ -180,6 +181,14 @@ impl Database {
                 ) THEN
                     ALTER TABLE users ADD COLUMN pending_command TEXT DEFAULT NULL;
                 END IF;
+
+                -- Add name column if not exists (for WhatsApp profile names)
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name='users' AND column_name='name'
+                ) THEN
+                    ALTER TABLE users ADD COLUMN name TEXT DEFAULT NULL;
+                END IF;
             END $$;
             "#,
         )
@@ -220,16 +229,17 @@ impl Database {
         sqlx::query(
             r#"
             INSERT INTO users (
-                phone_number, created_at, onboarding_completed, onboarding_step,
+                phone_number, name, created_at, onboarding_completed, onboarding_step,
                 breakfast_reminder, lunch_reminder, dinner_reminder, water_reminder,
                 breakfast_time, lunch_time, dinner_time, opted_in, timezone,
                 water_reminder_interval, daily_water_goal, daily_calorie_goal,
                 silent_hours_start, silent_hours_end, is_active
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
-            ON CONFLICT (phone_number) DO NOTHING
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+            ON CONFLICT (phone_number) DO UPDATE SET name = EXCLUDED.name
             "#,
         )
         .bind(&user.phone_number)
+        .bind(&user.name)
         .bind(user.created_at)
         .bind(user.onboarding_completed)
         .bind(&user.onboarding_step)
@@ -255,10 +265,10 @@ impl Database {
     }
 
     pub async fn get_user(&self, phone_number: &str) -> Result<Option<User>> {
-        // Try to get pending_command, but fallback gracefully if column doesn't exist yet
+        // Try to get all fields including name and pending_command
         let user_result = sqlx::query(
             r#"
-            SELECT phone_number, created_at, onboarding_completed, onboarding_step,
+            SELECT phone_number, name, created_at, onboarding_completed, onboarding_step,
                    breakfast_reminder, lunch_reminder, dinner_reminder, water_reminder,
                    breakfast_time, lunch_time, dinner_time, opted_in, timezone,
                    water_reminder_interval, daily_water_goal, daily_calorie_goal,
@@ -270,29 +280,30 @@ impl Database {
         .fetch_optional(&self.pool)
         .await;
 
-        // If query fails (column doesn't exist), try without pending_command
+        // If query fails (column doesn't exist), try without pending_command and name
         let user = match user_result {
             Ok(Some(row)) => Some(User {
                 phone_number: row.get(0),
-                created_at: row.get(1),
-                onboarding_completed: row.get(2),
-                onboarding_step: row.get(3),
-                breakfast_reminder: row.get(4),
-                lunch_reminder: row.get(5),
-                dinner_reminder: row.get(6),
-                water_reminder: row.get(7),
-                breakfast_time: row.get(8),
-                lunch_time: row.get(9),
-                dinner_time: row.get(10),
-                opted_in: row.get(11),
-                timezone: row.get(12),
-                water_reminder_interval: row.get(13),
-                daily_water_goal: row.get(14),
-                daily_calorie_goal: row.get(15),
-                silent_hours_start: row.get(16),
-                silent_hours_end: row.get(17),
-                is_active: row.get(18),
-                pending_command: row.get(19),
+                name: row.get(1),
+                created_at: row.get(2),
+                onboarding_completed: row.get(3),
+                onboarding_step: row.get(4),
+                breakfast_reminder: row.get(5),
+                lunch_reminder: row.get(6),
+                dinner_reminder: row.get(7),
+                water_reminder: row.get(8),
+                breakfast_time: row.get(9),
+                lunch_time: row.get(10),
+                dinner_time: row.get(11),
+                opted_in: row.get(12),
+                timezone: row.get(13),
+                water_reminder_interval: row.get(14),
+                daily_water_goal: row.get(15),
+                daily_calorie_goal: row.get(16),
+                silent_hours_start: row.get(17),
+                silent_hours_end: row.get(18),
+                is_active: row.get(19),
+                pending_command: row.get(20),
             }),
             Ok(None) => None,
             Err(e) if e.to_string().contains("pending_command") || e.to_string().contains("column") => {
@@ -313,6 +324,7 @@ impl Database {
                 .await?
                 .map(|row| User {
                     phone_number: row.get(0),
+                    name: None, // Legacy fallback - name column doesn't exist yet
                     created_at: row.get(1),
                     onboarding_completed: row.get(2),
                     onboarding_step: row.get(3),
@@ -341,10 +353,10 @@ impl Database {
     }
 
     pub async fn get_all_users(&self) -> Result<Vec<User>> {
-        // Try with pending_command first
+        // Try with pending_command and name first
         let result = sqlx::query(
             r#"
-            SELECT phone_number, created_at, onboarding_completed, onboarding_step,
+            SELECT phone_number, name, created_at, onboarding_completed, onboarding_step,
                    breakfast_reminder, lunch_reminder, dinner_reminder, water_reminder,
                    breakfast_time, lunch_time, dinner_time, opted_in, timezone,
                    water_reminder_interval, daily_water_goal, daily_calorie_goal,
@@ -360,25 +372,26 @@ impl Database {
                 .into_iter()
                 .map(|row| User {
                     phone_number: row.get(0),
-                    created_at: row.get(1),
-                    onboarding_completed: row.get(2),
-                    onboarding_step: row.get(3),
-                    breakfast_reminder: row.get(4),
-                    lunch_reminder: row.get(5),
-                    dinner_reminder: row.get(6),
-                    water_reminder: row.get(7),
-                    breakfast_time: row.get(8),
-                    lunch_time: row.get(9),
-                    dinner_time: row.get(10),
-                    opted_in: row.get(11),
-                    timezone: row.get(12),
-                    water_reminder_interval: row.get(13),
-                    daily_water_goal: row.get(14),
-                    daily_calorie_goal: row.get(15),
-                    silent_hours_start: row.get(16),
-                    silent_hours_end: row.get(17),
-                    is_active: row.get(18),
-                    pending_command: row.get(19),
+                    name: row.get(1),
+                    created_at: row.get(2),
+                    onboarding_completed: row.get(3),
+                    onboarding_step: row.get(4),
+                    breakfast_reminder: row.get(5),
+                    lunch_reminder: row.get(6),
+                    dinner_reminder: row.get(7),
+                    water_reminder: row.get(8),
+                    breakfast_time: row.get(9),
+                    lunch_time: row.get(10),
+                    dinner_time: row.get(11),
+                    opted_in: row.get(12),
+                    timezone: row.get(13),
+                    water_reminder_interval: row.get(14),
+                    daily_water_goal: row.get(15),
+                    daily_calorie_goal: row.get(16),
+                    silent_hours_start: row.get(17),
+                    silent_hours_end: row.get(18),
+                    is_active: row.get(19),
+                    pending_command: row.get(20),
                 })
                 .collect(),
             Err(e) if e.to_string().contains("pending_command") || e.to_string().contains("column") => {
@@ -399,6 +412,7 @@ impl Database {
                 .into_iter()
                 .map(|row| User {
                     phone_number: row.get(0),
+                    name: None, // Legacy fallback - name column doesn't exist yet
                     created_at: row.get(1),
                     onboarding_completed: row.get(2),
                     onboarding_step: row.get(3),
@@ -983,6 +997,20 @@ impl Database {
     }
 
     /// Toggle user active status
+    /// Update user's name from WhatsApp profile
+    pub async fn update_user_name(&self, phone_number: &str, name: Option<&str>) -> Result<()> {
+        sqlx::query("UPDATE users SET name = $1 WHERE phone_number = $2")
+            .bind(name)
+            .bind(phone_number)
+            .execute(&self.pool)
+            .await?;
+
+        if let Some(n) = name {
+            log::debug!("Updated name for {}: {}", phone_number, n);
+        }
+        Ok(())
+    }
+
     pub async fn toggle_user_active(&self, phone_number: &str) -> Result<bool> {
         // Get current status
         let current = sqlx::query(
@@ -1007,12 +1035,68 @@ impl Database {
         Ok(new_status)
     }
 
+    /// Reset user completely - delete all meals, water logs, conversations, favorite meals
+    /// and reset onboarding status (keeps user record with phone number)
+    pub async fn reset_user(&self, phone_number: &str) -> Result<()> {
+        log::info!("🔄 Resetting user: {}", phone_number);
+
+        // Delete all meals
+        sqlx::query("DELETE FROM meals WHERE user_phone = $1")
+            .bind(phone_number)
+            .execute(&self.pool)
+            .await?;
+        log::debug!("Deleted meals for {}", phone_number);
+
+        // Delete all water logs
+        sqlx::query("DELETE FROM water_logs WHERE user_phone = $1")
+            .bind(phone_number)
+            .execute(&self.pool)
+            .await?;
+        log::debug!("Deleted water logs for {}", phone_number);
+
+        // Delete all conversations
+        sqlx::query("DELETE FROM conversations WHERE user_phone = $1")
+            .bind(phone_number)
+            .execute(&self.pool)
+            .await?;
+        log::debug!("Deleted conversations for {}", phone_number);
+
+        // Delete all favorite meals
+        sqlx::query("DELETE FROM favorite_meals WHERE user_phone = $1")
+            .bind(phone_number)
+            .execute(&self.pool)
+            .await?;
+        log::debug!("Deleted favorite meals for {}", phone_number);
+
+        // Reset user to initial state (not onboarded)
+        sqlx::query(
+            r#"
+            UPDATE users
+            SET onboarding_completed = false,
+                onboarding_step = NULL,
+                breakfast_time = NULL,
+                lunch_time = NULL,
+                dinner_time = NULL,
+                daily_calorie_goal = NULL,
+                daily_water_goal = NULL,
+                is_active = true
+            WHERE phone_number = $1
+            "#
+        )
+        .bind(phone_number)
+        .execute(&self.pool)
+        .await?;
+
+        log::info!("✅ User {} has been completely reset", phone_number);
+        Ok(())
+    }
+
     /// Get only active users (for reminders)
     pub async fn get_active_users(&self) -> Result<Vec<User>> {
-        // Try with pending_command first
+        // Try with pending_command and name first
         let result = sqlx::query(
             r#"
-            SELECT phone_number, created_at, onboarding_completed, onboarding_step,
+            SELECT phone_number, name, created_at, onboarding_completed, onboarding_step,
                    breakfast_reminder, lunch_reminder, dinner_reminder, water_reminder,
                    breakfast_time, lunch_time, dinner_time, opted_in, timezone,
                    water_reminder_interval, daily_water_goal, daily_calorie_goal,
@@ -1029,25 +1113,26 @@ impl Database {
                 .into_iter()
                 .map(|row| User {
                     phone_number: row.get(0),
-                    created_at: row.get(1),
-                    onboarding_completed: row.get(2),
-                    onboarding_step: row.get(3),
-                    breakfast_reminder: row.get(4),
-                    lunch_reminder: row.get(5),
-                    dinner_reminder: row.get(6),
-                    water_reminder: row.get(7),
-                    breakfast_time: row.get(8),
-                    lunch_time: row.get(9),
-                    dinner_time: row.get(10),
-                    opted_in: row.get(11),
-                    timezone: row.get(12),
-                    water_reminder_interval: row.get(13),
-                    daily_water_goal: row.get(14),
-                    daily_calorie_goal: row.get(15),
-                    silent_hours_start: row.get(16),
-                    silent_hours_end: row.get(17),
-                    is_active: row.get(18),
-                    pending_command: row.get(19),
+                    name: row.get(1),
+                    created_at: row.get(2),
+                    onboarding_completed: row.get(3),
+                    onboarding_step: row.get(4),
+                    breakfast_reminder: row.get(5),
+                    lunch_reminder: row.get(6),
+                    dinner_reminder: row.get(7),
+                    water_reminder: row.get(8),
+                    breakfast_time: row.get(9),
+                    lunch_time: row.get(10),
+                    dinner_time: row.get(11),
+                    opted_in: row.get(12),
+                    timezone: row.get(13),
+                    water_reminder_interval: row.get(14),
+                    daily_water_goal: row.get(15),
+                    daily_calorie_goal: row.get(16),
+                    silent_hours_start: row.get(17),
+                    silent_hours_end: row.get(18),
+                    is_active: row.get(19),
+                    pending_command: row.get(20),
                 })
                 .collect(),
             Err(e) if e.to_string().contains("pending_command") || e.to_string().contains("column") => {
@@ -1069,6 +1154,7 @@ impl Database {
                 .into_iter()
                 .map(|row| User {
                     phone_number: row.get(0),
+                    name: None, // Legacy fallback - name column doesn't exist yet
                     created_at: row.get(1),
                     onboarding_completed: row.get(2),
                     onboarding_step: row.get(3),

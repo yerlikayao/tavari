@@ -36,6 +36,7 @@ pub fn create_admin_router(admin_service: Arc<AdminService>, admin_token: String
         .route("/api/users/:phone/meals", get(get_user_meals))
         .route("/api/users/:phone/conversations", get(get_user_conversations))
         .route("/api/users/:phone/toggle-active", post(toggle_user_active))
+        .route("/api/users/:phone/reset", post(reset_user))
         .route("/api/users/:phone/send-message", post(send_user_message))
         .route("/api/broadcast", post(broadcast_message))
         .with_state(state)
@@ -143,6 +144,31 @@ async fn toggle_user_active(
 
     Ok((StatusCode::OK, axum::Json(serde_json::json!({
         "is_active": new_status
+    }))))
+}
+
+/// Reset user completely - deletes all data and resets to fresh state
+async fn reset_user(
+    Path(phone): Path<String>,
+    Query(query): Query<AuthQuery>,
+    State(state): State<AdminState>,
+) -> Result<impl IntoResponse, StatusCode> {
+    verify_token(&query, &state.admin_token)?;
+
+    state
+        .admin_service
+        .reset_user(&phone)
+        .await
+        .map_err(|e| {
+            log::error!("Failed to reset user {}: {}", phone, e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    log::warn!("🔄 Admin reset user: {}", phone);
+
+    Ok((StatusCode::OK, axum::Json(serde_json::json!({
+        "success": true,
+        "message": format!("User {} has been reset successfully", phone)
     }))))
 }
 
