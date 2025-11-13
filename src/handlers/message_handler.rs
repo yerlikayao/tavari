@@ -139,30 +139,59 @@ impl MessageHandler {
         log::info!("🧠 Using AI to detect user intent for: '{}'", message);
         match self.openai.detect_user_intent(message).await {
             Ok(UserIntent::LogMeal(meal_description)) => {
-                // Kullanıcı yemek kaydetmek istiyor
                 log::info!("🍽️ User wants to log meal: {}", meal_description);
                 self.handle_text_meal(from, &meal_description).await?;
             }
             Ok(UserIntent::LogWater(amount)) => {
-                // Kullanıcı su içtiğini kaydetmek istiyor
                 log::info!("💧 User wants to log water: {} ml", amount);
                 self.handle_water_log_with_amount(from, amount).await?;
             }
+            Ok(UserIntent::SetCalorieGoal(amount)) => {
+                log::info!("🎯 User wants to set calorie goal: {} kcal", amount);
+                self.db.update_calorie_goal(from, amount).await?;
+                self.whatsapp.send_message(from, &format!("✅ Kalori hedefin {} kcal olarak ayarlandı!", amount)).await?;
+            }
+            Ok(UserIntent::SetWaterGoal(amount)) => {
+                log::info!("💧 User wants to set water goal: {} ml", amount);
+                self.db.update_water_goal(from, amount).await?;
+                self.whatsapp.send_message(from, &format!("✅ Su hedefin {} ml olarak ayarlandı!", amount)).await?;
+            }
+            Ok(UserIntent::SetMealTime(meal_type, time)) => {
+                log::info!("⏰ User wants to set meal time: {} at {}", meal_type, time);
+                let meal_type_normalized = match meal_type.as_str() {
+                    "kahvalti" | "kahvaltı" => "breakfast",
+                    "ogle" | "öğle" => "lunch",
+                    "aksam" | "akşam" => "dinner",
+                    _ => {
+                        self.whatsapp.send_message(from, "❌ Geçersiz öğün tipi. Kullan: kahvaltı, öğle, akşam").await?;
+                        return Ok(());
+                    }
+                };
+                self.db.update_meal_time(from, meal_type_normalized, &time).await?;
+                let meal_name_tr = match meal_type_normalized {
+                    "breakfast" => "Kahvaltı",
+                    "lunch" => "Öğle",
+                    "dinner" => "Akşam",
+                    _ => "Öğün",
+                };
+                self.whatsapp.send_message(from, &format!("✅ {} saatin {} olarak ayarlandı!", meal_name_tr, time)).await?;
+            }
+            Ok(UserIntent::SetSilentHours(start, end)) => {
+                log::info!("🌙 User wants to set silent hours: {} - {}", start, end);
+                self.db.update_silent_hours(from, &start, &end).await?;
+                self.whatsapp.send_message(from, &format!("✅ Sessiz saatler {} - {} olarak ayarlandı!", start, end)).await?;
+            }
             Ok(UserIntent::RunCommand(command)) => {
-                // Kullanıcı bir komut çalıştırmak istiyor
                 log::info!("⚙️ User wants to run command: {}", command);
                 if !self.try_handle_smart_command(from, &command).await? {
-                    // Komut bulunamadıysa yardım göster
                     self.send_help_message(from).await?;
                 }
             }
             Ok(UserIntent::Unknown) => {
-                // AI belirsiz, yardım mesajı göster
                 log::info!("❓ AI couldn't determine intent, showing help");
                 self.send_help_message(from).await?;
             }
             Err(e) => {
-                // AI hatası - yardım mesajı göster
                 log::warn!("⚠️ AI intent detection failed: {}", e);
                 self.send_help_message(from).await?;
             }
@@ -642,17 +671,6 @@ impl MessageHandler {
                 self.handle_silent_hours_command(from, &parts).await?;
                 true
             }
-            // Favori yemekler komutları
-            "favori" | "favoriler" | "favorite" | "favorites" | "fav" => {
-                self.handle_favorite_meals_command(from, &parts).await?;
-                true
-            }
-            // Check for quick favorite patterns (fav1, fav2, etc.)
-            word if word.starts_with("fav") && word.len() > 3 => {
-                let name = word.to_string();
-                self.handle_quick_favorite(from, &name).await?;
-                true
-            }
             _ => false,
         };
 
@@ -882,36 +900,30 @@ impl MessageHandler {
 
     async fn send_help_message(&self, to: &str) -> Result<()> {
         let help = "📱 *Beslenme Takip Botu*\n\n\
-                   *🍽️ Yemek Kaydet (Doğal Dil)*\n\
+                   *🍽️ Yemek Kaydet*\n\
                    Sadece yaz:\n\
                    • \"kahvaltı yaptım\"\n\
                    • \"pizza yedim\"\n\
                    • \"tavuk göğsü ve salata\"\n\
                    • Fotoğraf gönder\n\n\
-                   *💧 Su Kaydet (Doğal Dil)*\n\
+                   *💧 Su Kaydet*\n\
                    Sadece yaz:\n\
                    • \"su içtim\"\n\
                    • \"250 ml içtim\"\n\
                    • \"1 bardak su\"\n\
                    • 1, 2, 3 (200/250/500ml)\n\n\
-                   *📊 Ana Komutlar*\n\
-                   rapor - Günlük özet\n\
+                   *📊 Raporlar*\n\
+                   rapor - Bugünün özeti\n\
                    geçmiş - Son aktiviteler\n\
-                   haftalık - 7 günlük özet\n\
-                   tavsiye - AI beslenme önerisi\n\
-                   ayarlar - Tüm ayarlar\n\n\
-                   *⭐ Favori Yemekler*\n\
-                   favori - Liste görüntüle\n\
-                   favori ekle fav1 Tavuklu pilav\n\
-                   fav1 - Hızlı kayıt\n\n\
-                   *🎯 Hedefler*\n\
-                   kalorihedefi 2500\n\
-                   suhedefi 3000\n\
-                   sessiz 23:00 07:00\n\n\
-                   *⚙️ Ayarlar*\n\
-                   saat kahvalti 09:00\n\
-                   suaraligi 120\n\
-                   timezone Europe/Istanbul\n\n\
+                   haftalık - 7 günlük trend\n\
+                   tavsiye - AI önerisi\n\n\
+                   *🎯 Hedefler & Ayarlar*\n\
+                   ayarlar - Tüm ayarları gör\n\n\
+                   Doğal dil ile değiştir:\n\
+                   • \"kalori hedefim 2500\"\n\
+                   • \"su hedefim 3 litre\"\n\
+                   • \"kahvaltı saatim 9\"\n\
+                   • \"sessiz saat 23-7\"\n\n\
                    *💡 İpucu:* Normal konuşarak mesaj at!";
 
         self.whatsapp.send_message(to, help).await?;
@@ -1012,172 +1024,6 @@ impl MessageHandler {
             from,
             &format!("✅ Sessiz saatleriniz {} - {} olarak güncellendi!", start, end)
         ).await?;
-
-        Ok(())
-    }
-
-    async fn handle_favorite_meals_command(&self, from: &str, parts: &[&str]) -> Result<()> {
-        // Sub-command handling: favori [ekle|liste|sil]
-        if parts.len() < 2 {
-            // No sub-command: show list
-            let favorites = self.db.get_favorite_meals(from).await?;
-
-            if favorites.is_empty() {
-                self.whatsapp.send_message(
-                    from,
-                    "⭐ *Favori Yemekler*\n\n\
-                     Henüz favori yok.\n\n\
-                     *Ekle:*\n\
-                     favori ekle fav1 Tavuklu pilav\n\n\
-                     *Kullan:*\n\
-                     Sadece 'fav1' yaz!"
-                ).await?;
-                return Ok(());
-            }
-
-            let mut response = "⭐ *Favori Yemekleriniz*\n\n".to_string();
-            for fav in favorites.iter() {
-                response.push_str(&format!(
-                    "• {} • {:.0} kcal\n   {}\n",
-                    fav.name, fav.calories, fav.description
-                ));
-            }
-            response.push_str("\n💡 Kaydet: Sadece favori adını yaz");
-
-            self.whatsapp.send_message(from, &response).await?;
-            return Ok(());
-        }
-
-        let subcommand = parts[1];
-        match subcommand {
-            "ekle" | "add" => {
-                if parts.len() < 4 {
-                    self.whatsapp.send_message(
-                        from,
-                        "❌ Kullanım: favori ekle [isim] [açıklama]\n\nÖrnek: favori ekle fav1 Tavuklu pilav ve salata"
-                    ).await?;
-                    return Ok(());
-                }
-
-                let name = parts[2].to_lowercase();
-                let description = parts[3..].join(" ");
-
-                // Validate name (only alphanumeric and Turkish characters)
-                if !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
-                    self.whatsapp.send_message(
-                        from,
-                        "❌ Favori ismi sadece harf, rakam ve _ içerebilir."
-                    ).await?;
-                    return Ok(());
-                }
-
-                // Get calorie estimate from OpenAI
-                let (calories, analyzed_description) = match self.openai.analyze_text_meal(&description).await {
-                    Ok(info) => (info.calories, info.description),
-                    Err(e) => {
-                        log::warn!("Failed to analyze favorite meal calories: {:?}", e);
-                        (0.0, description.clone()) // Default to 0 if analysis fails
-                    }
-                };
-
-                let favorite = crate::models::FavoriteMeal {
-                    id: None,
-                    user_phone: from.to_string(),
-                    name: name.clone(),
-                    description: analyzed_description.clone(),
-                    calories,
-                    created_at: Utc::now(),
-                };
-
-                self.db.add_favorite_meal(&favorite).await?;
-                self.whatsapp.send_message(
-                    from,
-                    &format!(
-                        "✅ *Favori eklendi!*\n\n\
-                         {} • {:.0} kcal\n\
-                         {}\n\n\
-                         💡 Kaydet: Sadece '{}' yaz",
-                        name, calories, analyzed_description, name
-                    )
-                ).await?;
-            }
-            "sil" | "delete" | "remove" => {
-                if parts.len() < 3 {
-                    self.whatsapp.send_message(
-                        from,
-                        "❌ Kullanım: favori sil [isim]\n\nÖrnek: favori sil fav1"
-                    ).await?;
-                    return Ok(());
-                }
-
-                let name = parts[2].to_lowercase();
-                self.db.delete_favorite_meal(from, &name).await?;
-                self.whatsapp.send_message(
-                    from,
-                    &format!("✅ '{}' favorilerden silindi.", name)
-                ).await?;
-            }
-            _ => {
-                self.whatsapp.send_message(
-                    from,
-                    "❌ Geçersiz komut.\n\n\
-                     Kullanılabilir komutlar:\n\
-                     • `favori` - Liste göster\n\
-                     • `favori ekle [isim] [açıklama]`\n\
-                     • `favori sil [isim]`"
-                ).await?;
-            }
-        }
-
-        Ok(())
-    }
-
-    async fn handle_quick_favorite(&self, from: &str, name: &str) -> Result<()> {
-        // Try to get the favorite meal
-        let favorite = self.db.get_favorite_meal_by_name(from, name).await?;
-
-        if let Some(fav) = favorite {
-            // Detect meal type based on current time
-            let user = self.db.get_user(from).await?.ok_or_else(|| anyhow::anyhow!("User not found"))?;
-            let user_tz: chrono_tz::Tz = user.timezone.parse().unwrap_or(chrono_tz::Europe::Istanbul);
-            let now_user = Utc::now().with_timezone(&user_tz);
-            let current_time = now_user.time();
-            let today = now_user.date_naive();
-            let meal_type = self.detect_meal_type_with_user(&user, current_time, today).await?;
-
-            // Log the meal
-            let meal = crate::models::Meal {
-                id: None,
-                user_phone: from.to_string(),
-                meal_type: meal_type.clone(),
-                calories: fav.calories,
-                description: fav.description.clone(),
-                image_path: None,
-                created_at: Utc::now(),
-            };
-
-            self.db.add_meal(&meal).await?;
-
-            self.whatsapp.send_message(
-                from,
-                &format!(
-                    "✅ *{} kaydedildi!*\n\n\
-                     {}\n\
-                     🔥 {:.0} kcal",
-                    meal_type,
-                    fav.description,
-                    fav.calories
-                )
-            ).await?;
-        } else {
-            self.whatsapp.send_message(
-                from,
-                &format!(
-                    "❌ '{}' bulunamadı\n\nEklemek için:\nfavori ekle {} [açıklama]",
-                    name, name
-                )
-            ).await?;
-        }
 
         Ok(())
     }

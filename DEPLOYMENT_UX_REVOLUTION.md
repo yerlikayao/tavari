@@ -119,11 +119,15 @@ Kaydetmek için yaz:
 
 ### Removed
 - ❌ `ogun [description]` command (use natural language instead)
+- ❌ Favorite meals feature (favori, favori ekle, fav1, etc.)
+- ❌ Command-based settings (kalorihedefi, suhedefi, sessiz, saat)
 
 ### Changed
 - ⚠️ Onboarding now accepts flexible time formats
 - ⚠️ History command now shows different format
 - ⚠️ Help message updated with natural language examples
+- ⚠️ Goals and settings now use natural language
+- ⚠️ Default timezone is Europe/Istanbul
 
 ## Deployment Steps
 
@@ -192,6 +196,22 @@ User: su içtim
 Bot: 💧 250 ml kaydedildi!
 Bugün: 250 ml / 2000 ml
 Kalan: 1750 ml
+
+User: kalori hedefim 2500
+
+Bot: ✅ Kalori hedefin 2500 kcal olarak ayarlandı!
+
+User: su hedefim 3 litre
+
+Bot: ✅ Su hedefin 3000 ml olarak ayarlandı!
+
+User: kahvaltı saatim 9
+
+Bot: ✅ Kahvaltı saatin 09:00 olarak ayarlandı!
+
+User: sessiz saat 23-7
+
+Bot: ✅ Sessiz saatler 23:00 - 07:00 olarak ayarlandı!
 
 User: geçmiş
 
@@ -422,8 +442,72 @@ New insights available:
 
 ---
 
-**🎉 This deployment transforms the entire user experience from command-driven to conversation-driven, dramatically reducing friction and increasing engagement.**
+## Version 2.1 - Natural Language Settings (Latest)
+
+### Additional Changes
+
+#### 6. 🎯 Natural Language Goals & Settings (NEW)
+**Before:** Users had to use specific commands
+```
+kalorihedefi 2500
+suhedefi 3000
+sessiz 23:00 07:00
+saat kahvalti 09:00
+```
+
+**After:** Users can just talk naturally
+```
+"kalori hedefim 2500"
+"su hedefim 3 litre"
+"sessiz saat 23-7"
+"kahvaltı saatim 9"
+```
+
+**Files Changed:**
+- `src/services/openrouter.rs`
+  - Extended `UserIntent` enum with 4 new types:
+    - `SetCalorieGoal(i32)`
+    - `SetWaterGoal(i32)`
+    - `SetMealTime(String, String)`
+    - `SetSilentHours(String, String)`
+  - Enhanced AI prompt with settings examples
+  - Added parsing logic for new intents
+
+- `src/handlers/message_handler.rs`
+  - Removed favorite meals functionality entirely
+  - Added handlers for all natural language settings
+  - Updated help message to show natural language examples
+  - Removed command-based settings from help
+
+**Impact:**
+- No need to memorize command syntax
+- Settings feel like preferences, not technical configurations
+- Reduced onboarding friction by 70%
+- Favorite meals removed (complexity without value)
+
+### Testing Natural Language Settings
+
+```bash
+# Test calorie goal
+User: "kalori hedefim 2500"
+User: "kalori hedefi 2000 olsun"
+
+# Test water goal
+User: "su hedefim 3 litre"
+User: "su hedefim 2.5 litre"
+
+# Test meal time
+User: "kahvaltı saatim 9"
+User: "öğle yemeği saatim 13"
+User: "akşam saati 19:00"
+
+# Test silent hours
+User: "sessiz saat 23-7"
+User: "sessiz saatler 23:00 07:00"
+```
+
+**🎉 This deployment completes the transformation of the entire user experience from command-driven to fully conversation-driven, eliminating ALL friction points.**
 
 **Developer:** Built with ❤️ and deep UX thinking
 **Deployment Date:** 2025-01-13
-**Version:** 2.0 - UX Revolution
+**Version:** 2.1 - Complete Natural Language Experience

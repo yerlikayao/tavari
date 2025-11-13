@@ -5,10 +5,14 @@ use std::fs;
 
 #[derive(Debug, Clone)]
 pub enum UserIntent {
-    LogMeal(String),      // Yemek açıklaması
-    LogWater(i32),        // Su miktarı (ml)
-    RunCommand(String),   // Komut adı
-    Unknown,              // Belirsiz/normal konuşma
+    LogMeal(String),           // Yemek açıklaması
+    LogWater(i32),             // Su miktarı (ml)
+    RunCommand(String),        // Komut adı
+    SetCalorieGoal(i32),       // Kalori hedefi
+    SetWaterGoal(i32),         // Su hedefi (ml)
+    SetMealTime(String, String), // (meal_type, time) - "kahvalti", "09:00"
+    SetSilentHours(String, String), // (start, end) - "23:00", "07:00"
+    Unknown,                   // Belirsiz/normal konuşma
 }
 
 #[derive(Debug, Serialize)]
@@ -578,30 +582,40 @@ impl OpenRouterService {
                      \n\
                      ANALİZ ADI:\n\
                      1. Kullanıcı ne yapmak istiyor?\n\
-                     2. Yemek mi kaydedecek? (kahvaltı yaptım, öğle yemeği yedim, biftek yedim, pizza, vb.)\n\
-                     3. Su mu içti? (su içtim, 250ml içtim, bardak su, vb.)\n\
-                     4. Bir komut mu çalıştırmak istiyor? (rapor, ayarlar, yardım, vb.)\n\
+                     2. Yemek mi kaydedecek?\n\
+                     3. Su mu içti?\n\
+                     4. Hedef mi ayarlıyor? (kalori hedefi, su hedefi)\n\
+                     5. Ayar mı değiştiriyor? (öğün saati, sessiz saat)\n\
+                     6. Komut mu çalıştırıyor?\n\
                      \n\
                      CEVAP FORMATI (TEK SATIR, AÇIKLAMA YAPMA):\n\
-                     - Yemek kaydı: MEAL:[yemek açıklaması]\n\
+                     - Yemek kaydı: MEAL:[açıklama]\n\
                      - Su kaydı: WATER:[miktar ml]\n\
+                     - Kalori hedefi: CALORIE_GOAL:[miktar]\n\
+                     - Su hedefi: WATER_GOAL:[miktar ml]\n\
+                     - Öğün saati: MEAL_TIME:[kahvalti/ogle/aksam]:[HH:MM]\n\
+                     - Sessiz saat: SILENT:[başlangıç HH:MM]:[bitiş HH:MM]\n\
                      - Komut: COMMAND:[komut adı]\n\
                      - Belirsiz: UNKNOWN\n\
                      \n\
                      ÖRNEKLER:\n\
                      \"kahvaltı yaptım\" -> MEAL:kahvaltı\n\
-                     \"öğle yemeği yedim\" -> MEAL:öğle yemeği\n\
-                     \"tavuk göğsü ve salata\" -> MEAL:tavuk göğsü ve salata\n\
-                     \"pizza yedim\" -> MEAL:pizza\n\
-                     \"biftek\" -> MEAL:biftek\n\
-                     \"250 ml su içtim\" -> WATER:250\n\
+                     \"pizza\" -> MEAL:pizza\n\
                      \"su içtim\" -> WATER:200\n\
-                     \"1 bardak su\" -> WATER:250\n\
-                     \"500ml\" -> WATER:500\n\
+                     \"250 ml\" -> WATER:250\n\
+                     \"kalori hedefim 2500\" -> CALORIE_GOAL:2500\n\
+                     \"kalori hedefi 2000 olsun\" -> CALORIE_GOAL:2000\n\
+                     \"su hedefim 3 litre\" -> WATER_GOAL:3000\n\
+                     \"su hedefim 2.5 litre\" -> WATER_GOAL:2500\n\
+                     \"kahvaltı saatim 9\" -> MEAL_TIME:kahvalti:09:00\n\
+                     \"kahvaltı saatimi 09:00 yap\" -> MEAL_TIME:kahvalti:09:00\n\
+                     \"öğle yemeği saatim 13\" -> MEAL_TIME:ogle:13:00\n\
+                     \"akşam saati 19:00\" -> MEAL_TIME:aksam:19:00\n\
+                     \"sessiz saat 23-7\" -> SILENT:23:00:07:00\n\
+                     \"sessiz saatler 23:00 07:00\" -> SILENT:23:00:07:00\n\
                      \"rapor\" -> COMMAND:rapor\n\
                      \"ayarlar\" -> COMMAND:ayarlar\n\
-                     \"merhaba\" -> UNKNOWN\n\
-                     \"nasılsın\" -> UNKNOWN",
+                     \"merhaba\" -> UNKNOWN",
                     user_input
                 ),
             }],
@@ -651,6 +665,30 @@ impl OpenRouterService {
         } else if let Some(water_str) = response_text.strip_prefix("WATER:") {
             let amount = water_str.parse::<i32>().unwrap_or(200);
             Ok(UserIntent::LogWater(amount))
+        } else if let Some(cal_str) = response_text.strip_prefix("CALORIE_GOAL:") {
+            let amount = cal_str.parse::<i32>().unwrap_or(2000);
+            Ok(UserIntent::SetCalorieGoal(amount))
+        } else if let Some(water_goal_str) = response_text.strip_prefix("WATER_GOAL:") {
+            let amount = water_goal_str.parse::<i32>().unwrap_or(2000);
+            Ok(UserIntent::SetWaterGoal(amount))
+        } else if let Some(meal_time_str) = response_text.strip_prefix("MEAL_TIME:") {
+            let parts: Vec<&str> = meal_time_str.split(':').collect();
+            if parts.len() >= 3 {
+                let meal_type = parts[0].to_string();
+                let time = format!("{}:{}", parts[1], parts[2]);
+                Ok(UserIntent::SetMealTime(meal_type, time))
+            } else {
+                Ok(UserIntent::Unknown)
+            }
+        } else if let Some(silent_str) = response_text.strip_prefix("SILENT:") {
+            let parts: Vec<&str> = silent_str.split(':').collect();
+            if parts.len() >= 4 {
+                let start = format!("{}:{}", parts[0], parts[1]);
+                let end = format!("{}:{}", parts[2], parts[3]);
+                Ok(UserIntent::SetSilentHours(start, end))
+            } else {
+                Ok(UserIntent::Unknown)
+            }
         } else if let Some(cmd) = response_text.strip_prefix("COMMAND:") {
             Ok(UserIntent::RunCommand(cmd.to_string()))
         } else {
