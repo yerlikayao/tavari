@@ -564,42 +564,58 @@ impl OpenRouterService {
             content: vec![ContentPart::Text {
                 content_type: "text".to_string(),
                 text: format!(
-                    "Sen bir komut öneri asistanısın. Kullanıcının yazdığı metni analiz et ve eğer bir komut yazmaya çalışıyorsa en yakın geçerli komutu öner.\n\
+                    "Sen bir akıllı komut asistanısın. Kullanıcının mesajını analiz et ve ne yapmak istediğini anla.\n\
                      \n\
-                     GEÇERLİ KOMUTLAR:\n\
-                     - rapor, özet (günlük rapor göster)\n\
-                     - geçmiş, tarihçe (son öğünler)\n\
-                     - tavsiye, öneri (AI beslenme tavsiyesi)\n\
-                     - ayarlar (kullanıcı ayarları)\n\
-                     - yardım, help (yardım menüsü)\n\
-                     - favori (favori yemekler)\n\
-                     - kalorihedefi [miktar] (kalori hedefi ayarla)\n\
-                     - suhedefi [miktar] (su hedefi ayarla)\n\
-                     - sessiz [başlangıç] [bitiş] (sessiz saatler)\n\
-                     - saat [kahvalti|ogle|aksam] [HH:MM] (öğün saati)\n\
-                     - suaraligi [dakika] (su hatırlatma aralığı)\n\
-                     - timezone [bölge] (zaman dilimi)\n\
-                     - ogun [açıklama] (yemek kaydet)\n\
+                     GEÇERLİ KOMUTLAR VE ÖRNEKLERİ:\n\
+                     1. rapor/özet - Günlük rapor göster\n\
+                     2. geçmiş/tarihçe - Son öğünleri listele\n\
+                     3. tavsiye/öneri - AI beslenme tavsiyesi al\n\
+                     4. ayarlar/settings - Kullanıcı ayarları\n\
+                     5. yardım/help - Yardım menüsü\n\
+                     6. favori - Favori yemekler\n\
+                     7. kalorihedefi [miktar] - Kalori hedefi ayarla\n\
+                     8. suhedefi [miktar] - Su hedefi ayarla (ml cinsinden)\n\
+                     9. sessiz [başlangıç] [bitiş] - Sessiz saatler\n\
+                     10. saat [öğün] [saat] - Öğün saati ayarla (kahvalti/ogle/aksam)\n\
+                     11. suaraligi [dakika] - Su hatırlatma aralığı (dakika)\n\
+                     12. timezone [bölge] - Zaman dilimi\n\
+                     13. ogun [açıklama] - Yemek kaydet\n\
                      \n\
-                     KULLANICININ YAZDIĞI: \"{}\"\n\
+                     KULLANICI MESAJI: \"{}\"\n\
                      \n\
-                     GÖREV:\n\
-                     1. Kullanıcının ne yapmak istediğini anla\n\
-                     2. Eğer yukarıdaki komutlardan birine benziyorsa, o komutu SADECE komut ismi olarak döndür\n\
-                     3. Eğer hiçbir komuta benzemiyor veya normal konuşma ise, sadece \"YOK\" yaz\n\
+                     ANALİZ ADIMLARI:\n\
+                     1. Kullanıcı KOMUT yazmaya mı çalışıyor yoksa NORMAL KONUŞMA mı yapıyor?\n\
+                     2. Eğer komutsa, hangi komuta benziyor? (typo, Türkçe karakter hatası, kısaltma vb.)\n\
+                     3. Kullanıcı PARAMETRE de vermiş mi? (sayı, saat, kelime vb.)\n\
+                     4. Parametreyi komutla birleştir\n\
+                     \n\
+                     ÖNEMLİ KURALLAR:\n\
+                     - \"su aralığı\" = \"suaraligi\" (boşluksuz)\n\
+                     - \"su hedefi\" = \"suhedefi\" (boşluksuz)\n\
+                     - \"kalori hedefi\" = \"kalorihedefi\" (boşluksuz)\n\
+                     - Sayıları AYNEN kullan (\"120\" yazmış -> \"suaraligi 120\")\n\
+                     - Parametreyi komuttan SONRA ekle\n\
+                     - Normal konuşmaysa \"YOK\" döndür\n\
                      \n\
                      CEVAP FORMATI:\n\
-                     - Eğer komut öneriyorsan: sadece komut ismini yaz (örn: \"rapor\" veya \"ayarlar\")\n\
-                     - Eğer komut önermiyorsan: \"YOK\" yaz\n\
-                     - Açıklama YAPMA, sadece komut ismi veya YOK\n\
+                     - Komut + Parametre: \"suaraligi 120\" veya \"suhedefi 2500\"\n\
+                     - Sadece Komut: \"rapor\" veya \"ayarlar\"\n\
+                     - Normal Konuşma: \"YOK\"\n\
+                     - AÇIKLAMA YAPMA, sadece komut (ve varsa parametre) yaz\n\
                      \n\
                      ÖRNEKLER:\n\
-                     Kullanıcı: \"rapr\" -> Cevap: \"rapor\"\n\
-                     Kullanıcı: \"ayrlr\" -> Cevap: \"ayarlar\"\n\
-                     Kullanıcı: \"tvsiye\" -> Cevap: \"tavsiye\"\n\
-                     Kullanıcı: \"merhaba\" -> Cevap: \"YOK\"\n\
-                     Kullanıcı: \"nasılsın\" -> Cevap: \"YOK\"\n\
-                     Kullanıcı: \"yardm\" -> Cevap: \"yardım\"",
+                     Kullanıcı: \"rapr\" -> \"rapor\"\n\
+                     Kullanıcı: \"ayrlr\" -> \"ayarlar\"\n\
+                     Kullanıcı: \"tvsiye\" -> \"tavsiye\"\n\
+                     Kullanıcı: \"su aralığı 120\" -> \"suaraligi 120\"\n\
+                     Kullanıcı: \"sualigi 90\" -> \"suaraligi 90\"\n\
+                     Kullanıcı: \"su hedefi 3000\" -> \"suhedefi 3000\"\n\
+                     Kullanıcı: \"suhedfi 2500\" -> \"suhedefi 2500\"\n\
+                     Kullanıcı: \"kalori hedfi 2200\" -> \"kalorihedefi 2200\"\n\
+                     Kullanıcı: \"kahvaltı saati 08:00\" -> \"saat kahvalti 08:00\"\n\
+                     Kullanıcı: \"merhaba\" -> \"YOK\"\n\
+                     Kullanıcı: \"nasılsın\" -> \"YOK\"\n\
+                     Kullanıcı: \"teşekkürler\" -> \"YOK\"",
                     user_input
                 ),
             }],
@@ -608,7 +624,7 @@ impl OpenRouterService {
         let request = ChatRequest {
             model: self.model.clone(),
             messages,
-            max_tokens: 50,
+            max_tokens: 100, // Increased for parameter support (e.g., "suaraligi 120")
         };
 
         log::info!("📤 Sending command suggestion request to OpenRouter");
