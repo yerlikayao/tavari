@@ -40,7 +40,6 @@ impl Database {
                 dinner_time TEXT,
                 opted_in BOOLEAN DEFAULT FALSE,
                 timezone TEXT DEFAULT 'Europe/Istanbul',
-                water_reminder_interval INTEGER DEFAULT 120,
                 daily_water_goal INTEGER DEFAULT 2000,
                 is_active BOOLEAN DEFAULT TRUE
             )
@@ -139,14 +138,6 @@ impl Database {
             r#"
             DO $$
             BEGIN
-                -- Add water_reminder_interval column if not exists
-                IF NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_name='users' AND column_name='water_reminder_interval'
-                ) THEN
-                    ALTER TABLE users ADD COLUMN water_reminder_interval INTEGER DEFAULT 120;
-                END IF;
-
                 -- Add daily_water_goal column if not exists
                 IF NOT EXISTS (
                     SELECT 1 FROM information_schema.columns
@@ -209,10 +200,6 @@ impl Database {
         .await?;
 
         // Update existing users with NULL values to have defaults
-        sqlx::query("UPDATE users SET water_reminder_interval = 120 WHERE water_reminder_interval IS NULL")
-            .execute(&self.pool)
-            .await?;
-
         sqlx::query("UPDATE users SET daily_water_goal = 2000 WHERE daily_water_goal IS NULL")
             .execute(&self.pool)
             .await?;
@@ -245,9 +232,9 @@ impl Database {
                 phone_number, name, created_at, onboarding_completed, onboarding_step,
                 breakfast_reminder, lunch_reminder, dinner_reminder, water_reminder,
                 breakfast_time, lunch_time, dinner_time, opted_in, timezone,
-                water_reminder_interval, daily_water_goal, daily_calorie_goal,
+                daily_water_goal, daily_calorie_goal,
                 silent_hours_start, silent_hours_end, is_active
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
             ON CONFLICT (phone_number) DO UPDATE SET name = EXCLUDED.name
             "#,
         )
@@ -265,7 +252,6 @@ impl Database {
         .bind(&user.dinner_time)
         .bind(user.opted_in)
         .bind(&user.timezone)
-        .bind(user.water_reminder_interval)
         .bind(user.daily_water_goal)
         .bind(user.daily_calorie_goal)
         .bind(&user.silent_hours_start)
@@ -284,7 +270,7 @@ impl Database {
             SELECT phone_number, name, created_at, onboarding_completed, onboarding_step,
                    breakfast_reminder, lunch_reminder, dinner_reminder, water_reminder,
                    breakfast_time, lunch_time, dinner_time, opted_in, timezone,
-                   water_reminder_interval, daily_water_goal, daily_calorie_goal,
+                   daily_water_goal, daily_calorie_goal,
                    silent_hours_start, silent_hours_end, is_active, pending_command
             FROM users WHERE phone_number = $1
             "#,
@@ -310,13 +296,12 @@ impl Database {
                 dinner_time: row.get(11),
                 opted_in: row.get(12),
                 timezone: row.get(13),
-                water_reminder_interval: row.get(14),
-                daily_water_goal: row.get(15),
-                daily_calorie_goal: row.get(16),
-                silent_hours_start: row.get(17),
-                silent_hours_end: row.get(18),
-                is_active: row.get(19),
-                pending_command: row.get(20),
+                daily_water_goal: row.get(14),
+                daily_calorie_goal: row.get(15),
+                silent_hours_start: row.get(16),
+                silent_hours_end: row.get(17),
+                is_active: row.get(18),
+                pending_command: row.get(19),
             }),
             Ok(None) => None,
             Err(e) if e.to_string().contains("pending_command") || e.to_string().contains("column") => {
@@ -327,7 +312,7 @@ impl Database {
                     SELECT phone_number, created_at, onboarding_completed, onboarding_step,
                            breakfast_reminder, lunch_reminder, dinner_reminder, water_reminder,
                            breakfast_time, lunch_time, dinner_time, opted_in, timezone,
-                           water_reminder_interval, daily_water_goal, daily_calorie_goal,
+                           daily_water_goal, daily_calorie_goal,
                            silent_hours_start, silent_hours_end, is_active
                     FROM users WHERE phone_number = $1
                     "#,
@@ -350,12 +335,11 @@ impl Database {
                     dinner_time: row.get(10),
                     opted_in: row.get(11),
                     timezone: row.get(12),
-                    water_reminder_interval: row.get(13),
-                    daily_water_goal: row.get(14),
-                    daily_calorie_goal: row.get(15),
-                    silent_hours_start: row.get(16),
-                    silent_hours_end: row.get(17),
-                    is_active: row.get(18),
+                    daily_water_goal: row.get(13),
+                    daily_calorie_goal: row.get(14),
+                    silent_hours_start: row.get(15),
+                    silent_hours_end: row.get(16),
+                    is_active: row.get(17),
                     pending_command: None, // Default to None if column doesn't exist
                 })
             }
@@ -372,7 +356,7 @@ impl Database {
             SELECT phone_number, name, created_at, onboarding_completed, onboarding_step,
                    breakfast_reminder, lunch_reminder, dinner_reminder, water_reminder,
                    breakfast_time, lunch_time, dinner_time, opted_in, timezone,
-                   water_reminder_interval, daily_water_goal, daily_calorie_goal,
+                   daily_water_goal, daily_calorie_goal,
                    silent_hours_start, silent_hours_end, is_active, pending_command
             FROM users
             "#,
@@ -398,13 +382,12 @@ impl Database {
                     dinner_time: row.get(11),
                     opted_in: row.get(12),
                     timezone: row.get(13),
-                    water_reminder_interval: row.get(14),
-                    daily_water_goal: row.get(15),
-                    daily_calorie_goal: row.get(16),
-                    silent_hours_start: row.get(17),
-                    silent_hours_end: row.get(18),
-                    is_active: row.get(19),
-                    pending_command: row.get(20),
+                    daily_water_goal: row.get(14),
+                    daily_calorie_goal: row.get(15),
+                    silent_hours_start: row.get(16),
+                    silent_hours_end: row.get(17),
+                    is_active: row.get(18),
+                    pending_command: row.get(19),
                 })
                 .collect(),
             Err(e) if e.to_string().contains("pending_command") || e.to_string().contains("column") => {
@@ -415,7 +398,7 @@ impl Database {
                     SELECT phone_number, created_at, onboarding_completed, onboarding_step,
                            breakfast_reminder, lunch_reminder, dinner_reminder, water_reminder,
                            breakfast_time, lunch_time, dinner_time, opted_in, timezone,
-                           water_reminder_interval, daily_water_goal, daily_calorie_goal,
+                           daily_water_goal, daily_calorie_goal,
                            silent_hours_start, silent_hours_end, is_active
                     FROM users
                     "#,
@@ -438,12 +421,11 @@ impl Database {
                     dinner_time: row.get(10),
                     opted_in: row.get(11),
                     timezone: row.get(12),
-                    water_reminder_interval: row.get(13),
-                    daily_water_goal: row.get(14),
-                    daily_calorie_goal: row.get(15),
-                    silent_hours_start: row.get(16),
-                    silent_hours_end: row.get(17),
-                    is_active: row.get(18),
+                    daily_water_goal: row.get(13),
+                    daily_calorie_goal: row.get(14),
+                    silent_hours_start: row.get(15),
+                    silent_hours_end: row.get(16),
+                    is_active: row.get(17),
                     pending_command: None,
                 })
                 .collect()
@@ -683,18 +665,6 @@ impl Database {
             "UPDATE users SET timezone = $1 WHERE phone_number = $2",
         )
         .bind(timezone)
-        .bind(phone_number)
-        .execute(&self.pool)
-        .await?;
-
-        Ok(())
-    }
-
-    pub async fn update_water_reminder_interval(&self, phone_number: &str, interval_minutes: i32) -> Result<()> {
-        sqlx::query(
-            "UPDATE users SET water_reminder_interval = $1 WHERE phone_number = $2",
-        )
-        .bind(interval_minutes)
         .bind(phone_number)
         .execute(&self.pool)
         .await?;
@@ -1097,7 +1067,7 @@ impl Database {
             SELECT phone_number, name, created_at, onboarding_completed, onboarding_step,
                    breakfast_reminder, lunch_reminder, dinner_reminder, water_reminder,
                    breakfast_time, lunch_time, dinner_time, opted_in, timezone,
-                   water_reminder_interval, daily_water_goal, daily_calorie_goal,
+                   daily_water_goal, daily_calorie_goal,
                    silent_hours_start, silent_hours_end, is_active, pending_command
             FROM users
             WHERE is_active = TRUE
@@ -1124,13 +1094,12 @@ impl Database {
                     dinner_time: row.get(11),
                     opted_in: row.get(12),
                     timezone: row.get(13),
-                    water_reminder_interval: row.get(14),
-                    daily_water_goal: row.get(15),
-                    daily_calorie_goal: row.get(16),
-                    silent_hours_start: row.get(17),
-                    silent_hours_end: row.get(18),
-                    is_active: row.get(19),
-                    pending_command: row.get(20),
+                    daily_water_goal: row.get(14),
+                    daily_calorie_goal: row.get(15),
+                    silent_hours_start: row.get(16),
+                    silent_hours_end: row.get(17),
+                    is_active: row.get(18),
+                    pending_command: row.get(19),
                 })
                 .collect(),
             Err(e) if e.to_string().contains("pending_command") || e.to_string().contains("column") => {
@@ -1141,7 +1110,7 @@ impl Database {
                     SELECT phone_number, created_at, onboarding_completed, onboarding_step,
                            breakfast_reminder, lunch_reminder, dinner_reminder, water_reminder,
                            breakfast_time, lunch_time, dinner_time, opted_in, timezone,
-                           water_reminder_interval, daily_water_goal, daily_calorie_goal,
+                           daily_water_goal, daily_calorie_goal,
                            silent_hours_start, silent_hours_end, is_active
                     FROM users
                     WHERE is_active = TRUE
@@ -1165,12 +1134,11 @@ impl Database {
                     dinner_time: row.get(10),
                     opted_in: row.get(11),
                     timezone: row.get(12),
-                    water_reminder_interval: row.get(13),
-                    daily_water_goal: row.get(14),
-                    daily_calorie_goal: row.get(15),
-                    silent_hours_start: row.get(16),
-                    silent_hours_end: row.get(17),
-                    is_active: row.get(18),
+                    daily_water_goal: row.get(13),
+                    daily_calorie_goal: row.get(14),
+                    silent_hours_start: row.get(15),
+                    silent_hours_end: row.get(16),
+                    is_active: row.get(17),
                     pending_command: None,
                 })
                 .collect()

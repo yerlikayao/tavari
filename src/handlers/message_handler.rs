@@ -199,7 +199,6 @@ impl MessageHandler {
                 dinner_time: None,
                 opted_in: true,
                 timezone: "Europe/Istanbul".to_string(),  // Varsayılan Türkiye
-                water_reminder_interval: Some(120),  // Varsayılan: 2 saat (120 dakika)
                 daily_water_goal: Some(2000),  // Varsayılan: 2 litre (2000 ml)
                 daily_calorie_goal: Some(2000),  // Varsayılan: 2000 kcal
                 silent_hours_start: Some("23:00".to_string()),  // Varsayılan: 23:00
@@ -634,11 +633,6 @@ impl MessageHandler {
                 self.handle_timezone_command(from, &parts).await?;
                 true
             }
-            // Su hatırlatma aralığı komutları
-            "suaraligi" | "suaraliği" | "waterinterval" => {
-                self.handle_water_interval_command(from, &parts).await?;
-                true
-            }
             // Su hedefi komutları
             "suhedefi" | "watergoal" | "suhedfi" => {
                 self.handle_water_goal_command(from, &parts).await?;
@@ -672,7 +666,6 @@ impl MessageHandler {
         let dinner_status = if user.dinner_reminder { "✅" } else { "❌" };
         let water_status = if user.water_reminder { "✅" } else { "❌" };
 
-        let water_interval = user.water_reminder_interval.unwrap_or(120);
         let water_goal = user.daily_water_goal.unwrap_or(2000);
         let calorie_goal = user.daily_calorie_goal.unwrap_or(2000);
         let silent_start = user.silent_hours_start.as_deref().unwrap_or("23:00");
@@ -688,7 +681,7 @@ impl MessageHandler {
              {} kcal kalori\n\
              {} ml su ({:.1}L)\n\n\
              💧 *Su Hatırlatma*\n\
-             {} Her {} dakika\n\n\
+             {} 2 saatte bir (08:00-22:00)\n\n\
              🌙 *Sessiz Saatler*\n\
              {} - {}\n\n\
              🌍 *Zaman Dilimi*\n\
@@ -698,7 +691,6 @@ impl MessageHandler {
              suhedefi 3000\n\
              sessiz 23:00 07:00\n\
              saat kahvalti 09:00\n\
-             suaraligi 120\n\
              timezone Europe/Istanbul",
             breakfast_time, breakfast_status,
             lunch_time, lunch_status,
@@ -707,7 +699,6 @@ impl MessageHandler {
             water_goal,
             water_goal as f64 / 1000.0,
             water_status,
-            water_interval,
             silent_start,
             silent_end,
             user.timezone
@@ -798,44 +789,6 @@ impl MessageHandler {
                 self.whatsapp.send_message(
                     from,
                     &format!("❌ Geçersiz zaman dilimi: {}\n\nÖrnek: Europe/Istanbul", timezone)
-                ).await?;
-            }
-        }
-
-        Ok(())
-    }
-
-    async fn handle_water_interval_command(&self, from: &str, cmd_parts: &[&str]) -> Result<()> {
-        if cmd_parts.len() < 2 {
-            self.whatsapp.send_message(
-                from,
-                "❌ Kullanım: suaraligi [dakika]\nÖrnek: suaraligi 120"
-            ).await?;
-            return Ok(());
-        }
-
-        let interval_str = cmd_parts[1];
-        match interval_str.parse::<i32>() {
-            Ok(interval) if interval > 0 && interval <= 480 => {
-                self.db.update_water_reminder_interval(from, interval).await?;
-
-                self.whatsapp.send_message(
-                    from,
-                    &format!("✅ Su hatırlatma aralığı {} dakika ({} saat) olarak güncellendi!",
-                        interval,
-                        interval as f64 / 60.0)
-                ).await?;
-            }
-            Ok(interval) => {
-                self.whatsapp.send_message(
-                    from,
-                    &format!("❌ Geçersiz aralık: {} dakika\nLütfen 1-480 dakika arası bir değer girin.", interval)
-                ).await?;
-            }
-            Err(_) => {
-                self.whatsapp.send_message(
-                    from,
-                    &format!("❌ Geçersiz sayı: {}\nLütfen sayı girin (örn: 120)", interval_str)
                 ).await?;
             }
         }
