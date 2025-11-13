@@ -554,6 +554,103 @@ impl OpenRouterService {
 
         Ok(clean_advice)
     }
+
+    /// AI ile geçersiz komutu analiz edip en yakın geçerli komutu öner
+    pub async fn suggest_command(&self, user_input: &str) -> Result<Option<String>> {
+        log::info!("🤖 Suggesting command for invalid input: {}", user_input);
+
+        let messages = vec![ChatMessage {
+            role: "user".to_string(),
+            content: vec![ContentPart::Text {
+                content_type: "text".to_string(),
+                text: format!(
+                    "Sen bir komut öneri asistanısın. Kullanıcının yazdığı metni analiz et ve eğer bir komut yazmaya çalışıyorsa en yakın geçerli komutu öner.\n\
+                     \n\
+                     GEÇERLİ KOMUTLAR:\n\
+                     - rapor, özet (günlük rapor göster)\n\
+                     - geçmiş, tarihçe (son öğünler)\n\
+                     - tavsiye, öneri (AI beslenme tavsiyesi)\n\
+                     - ayarlar (kullanıcı ayarları)\n\
+                     - yardım, help (yardım menüsü)\n\
+                     - favori (favori yemekler)\n\
+                     - kalorihedefi [miktar] (kalori hedefi ayarla)\n\
+                     - suhedefi [miktar] (su hedefi ayarla)\n\
+                     - sessiz [başlangıç] [bitiş] (sessiz saatler)\n\
+                     - saat [kahvalti|ogle|aksam] [HH:MM] (öğün saati)\n\
+                     - suaraligi [dakika] (su hatırlatma aralığı)\n\
+                     - timezone [bölge] (zaman dilimi)\n\
+                     - ogun [açıklama] (yemek kaydet)\n\
+                     \n\
+                     KULLANICININ YAZDIĞI: \"{}\"\n\
+                     \n\
+                     GÖREV:\n\
+                     1. Kullanıcının ne yapmak istediğini anla\n\
+                     2. Eğer yukarıdaki komutlardan birine benziyorsa, o komutu SADECE komut ismi olarak döndür\n\
+                     3. Eğer hiçbir komuta benzemiyor veya normal konuşma ise, sadece \"YOK\" yaz\n\
+                     \n\
+                     CEVAP FORMATI:\n\
+                     - Eğer komut öneriyorsan: sadece komut ismini yaz (örn: \"rapor\" veya \"ayarlar\")\n\
+                     - Eğer komut önermiyorsan: \"YOK\" yaz\n\
+                     - Açıklama YAPMA, sadece komut ismi veya YOK\n\
+                     \n\
+                     ÖRNEKLER:\n\
+                     Kullanıcı: \"rapr\" -> Cevap: \"rapor\"\n\
+                     Kullanıcı: \"ayrlr\" -> Cevap: \"ayarlar\"\n\
+                     Kullanıcı: \"tvsiye\" -> Cevap: \"tavsiye\"\n\
+                     Kullanıcı: \"merhaba\" -> Cevap: \"YOK\"\n\
+                     Kullanıcı: \"nasılsın\" -> Cevap: \"YOK\"\n\
+                     Kullanıcı: \"yardm\" -> Cevap: \"yardım\"",
+                    user_input
+                ),
+            }],
+        }];
+
+        let request = ChatRequest {
+            model: self.model.clone(),
+            messages,
+            max_tokens: 50,
+        };
+
+        log::info!("📤 Sending command suggestion request to OpenRouter");
+
+        let response = self
+            .client
+            .post("https://openrouter.ai/api/v1/chat/completions")
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .header("HTTP-Referer", "https://github.com/tavari-bot")
+            .header("X-Title", "Tavari Nutrition Bot")
+            .json(&request)
+            .send()
+            .await?;
+
+        let status = response.status();
+        log::info!("📥 OpenRouter response status: {}", status);
+
+        if !status.is_success() {
+            let error_text = response.text().await?;
+            log::error!("❌ OpenRouter API error ({}): {}", status, error_text);
+            // Hata durumunda None döndür, kullanıcıya direkt yardım mesajı gösterilecek
+            return Ok(None);
+        }
+
+        let chat_response: ChatResponse = response.json().await?;
+
+        if chat_response.choices.is_empty() {
+            log::warn!("❌ OpenRouter returned empty choices for command suggestion");
+            return Ok(None);
+        }
+
+        let suggestion = chat_response.choices[0].message.content.trim().to_lowercase();
+        log::info!("💡 AI suggested command: {}", suggestion);
+
+        // "YOK" dönmüşse veya boşsa None döndür
+        if suggestion == "yok" || suggestion.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(suggestion))
+        }
+    }
 }
 
 #[cfg(test)]

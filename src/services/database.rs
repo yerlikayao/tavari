@@ -276,6 +276,7 @@ impl Database {
             silent_hours_start: row.get(16),
             silent_hours_end: row.get(17),
             is_active: row.get(18),
+            pending_command: row.get(19),
         });
 
         Ok(user)
@@ -288,7 +289,7 @@ impl Database {
                    breakfast_reminder, lunch_reminder, dinner_reminder, water_reminder,
                    breakfast_time, lunch_time, dinner_time, opted_in, timezone,
                    water_reminder_interval, daily_water_goal, daily_calorie_goal,
-                   silent_hours_start, silent_hours_end, is_active
+                   silent_hours_start, silent_hours_end, is_active, pending_command
             FROM users
             "#,
         )
@@ -317,6 +318,7 @@ impl Database {
                 silent_hours_start: row.get(16),
                 silent_hours_end: row.get(17),
                 is_active: row.get(18),
+                pending_command: row.get(19),
             })
             .collect();
 
@@ -737,6 +739,27 @@ impl Database {
         Ok(())
     }
 
+    /// Set pending command for user (waiting for confirmation)
+    pub async fn set_pending_command(&self, phone_number: &str, command: &str) -> Result<()> {
+        sqlx::query("UPDATE users SET pending_command = $1 WHERE phone_number = $2")
+            .bind(command)
+            .bind(phone_number)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
+
+    /// Clear pending command for user
+    pub async fn clear_pending_command(&self, phone_number: &str) -> Result<()> {
+        sqlx::query("UPDATE users SET pending_command = NULL WHERE phone_number = $1")
+            .bind(phone_number)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
+
     // ============================================================
     // Conversation Logging Functions
     // ============================================================
@@ -874,7 +897,7 @@ impl Database {
                    breakfast_reminder, lunch_reminder, dinner_reminder, water_reminder,
                    breakfast_time, lunch_time, dinner_time, opted_in, timezone,
                    water_reminder_interval, daily_water_goal, daily_calorie_goal,
-                   silent_hours_start, silent_hours_end, is_active
+                   silent_hours_start, silent_hours_end, is_active, pending_command
             FROM users
             WHERE is_active = TRUE
             "#,
@@ -904,6 +927,7 @@ impl Database {
                 silent_hours_start: row.get(16),
                 silent_hours_end: row.get(17),
                 is_active: row.get(18),
+                pending_command: row.get(19),
             })
             .collect();
 

@@ -22,6 +22,7 @@ pub struct User {
     pub silent_hours_start: Option<String>,  // Sessiz saatler başlangıcı (HH:MM, varsayılan: "23:00")
     pub silent_hours_end: Option<String>,    // Sessiz saatler bitişi (HH:MM, varsayılan: "07:00")
     pub is_active: bool,  // Kullanıcı aktif mi? (false ise sistem ona mesaj atmaz)
+    pub pending_command: Option<String>,  // AI tarafından önerilen komut (onay bekliyor)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

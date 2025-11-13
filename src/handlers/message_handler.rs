@@ -87,6 +87,36 @@ impl MessageHandler {
             }
         }
 
+        // Eğer kullanıcının bekleyen bir komutu varsa, 1/0 onayını kontrol et
+        if let Some(pending_cmd) = &user.pending_command {
+            let trimmed = message.trim();
+            if trimmed == "1" {
+                // Onayladı - komutu çalıştır
+                log::info!("✅ User {} confirmed command: {}", from, pending_cmd);
+                self.db.clear_pending_command(from).await?;
+
+                // Onaylanan komutu çalıştır
+                if self.try_handle_smart_command(from, pending_cmd).await? {
+                    return Ok(());
+                }
+                // Komut çalıştırılamazsa yardım mesajı göster
+                self.send_help_message(from).await?;
+                return Ok(());
+            } else if trimmed == "0" {
+                // Reddetti
+                log::info!("❌ User {} rejected command: {}", from, pending_cmd);
+                self.db.clear_pending_command(from).await?;
+                self.whatsapp.send_message(from, "Tamam, iptal edildi.").await?;
+                return Ok(());
+            } else {
+                // 1 veya 0 değil - kullanıcı başka bir şey yazdı
+                // Pending command'ı temizle ve mesajı normal olarak işle
+                log::info!("ℹ️ User {} sent different message while pending command exists, clearing pending", from);
+                self.db.clear_pending_command(from).await?;
+                // Normal işleme devam et (aşağıdaki kod bloklarına düşecek)
+            }
+        }
+
         // Quick water button responses (1, 2, 3)
         let trimmed = message.trim();
         if trimmed == "1" {
@@ -121,8 +151,36 @@ impl MessageHandler {
             return Ok(());
         }
 
-        // Varsayılan yardım mesajı
-        self.send_help_message(from).await?;
+        // Geçersiz komut - AI'ya danış ve öneri al
+        log::info!("🤔 Invalid command received: '{}', asking AI for suggestion", message);
+        match self.openai.suggest_command(message).await {
+            Ok(Some(suggested_command)) => {
+                // AI bir komut önerdi
+                log::info!("💡 AI suggested command '{}' for input '{}'", suggested_command, message);
+
+                // Komutu bekletmeye al
+                self.db.set_pending_command(from, &suggested_command).await?;
+
+                // Kullanıcıya onay sor
+                let confirmation_msg = format!(
+                    "🤔 '{}' komutunu mu demek istedin?\n\n\
+                     1 - Evet\n\
+                     0 - Hayır",
+                    suggested_command
+                );
+                self.whatsapp.send_message(from, &confirmation_msg).await?;
+            }
+            Ok(None) => {
+                // AI öneri bulamadı veya normal konuşma - yardım mesajı göster
+                log::info!("ℹ️ AI could not suggest a command, showing help message");
+                self.send_help_message(from).await?;
+            }
+            Err(e) => {
+                // AI hatası - direkt yardım mesajı göster
+                log::warn!("⚠️ AI command suggestion failed: {}", e);
+                self.send_help_message(from).await?;
+            }
+        }
 
         Ok(())
     }
@@ -149,6 +207,7 @@ impl MessageHandler {
                 silent_hours_start: Some("23:00".to_string()),  // Varsayılan: 23:00
                 silent_hours_end: Some("07:00".to_string()),    // Varsayılan: 07:00
                 is_active: true,  // Varsayılan: aktif
+                pending_command: None,  // Başlangıçta bekleyen komut yok
             };
             self.db.create_user(&user).await?;
             log::info!("✅ New user created: {}", phone);
