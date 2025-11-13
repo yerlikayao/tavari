@@ -102,6 +102,9 @@ pub async fn handle_bird_webhook(
         let _ = handler.update_user_name(from, Some(name)).await;
     }
 
+    // Clear 24h window warning status since user just sent a message
+    let _ = handler.clear_window_warning(from).await;
+
     match webhook.payload.body.msg_type.as_str() {
         "text" => {
             if let Some(text) = webhook.payload.body.text {

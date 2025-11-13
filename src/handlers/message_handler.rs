@@ -30,6 +30,11 @@ impl MessageHandler {
         self.db.update_user_name(phone, name).await
     }
 
+    /// Clear 24h window warning status when user sends a message
+    pub async fn clear_window_warning(&self, phone: &str) -> Result<()> {
+        self.db.clear_warning_status(phone).await
+    }
+
     pub async fn handle_message(
         &self,
         from: &str,
@@ -92,35 +97,7 @@ impl MessageHandler {
             }
         }
 
-        // Eğer kullanıcının bekleyen bir komutu varsa, 1/0 onayını kontrol et
-        if let Some(pending_cmd) = &user.pending_command {
-            let trimmed = message.trim();
-            if trimmed == "1" {
-                // Onayladı - komutu çalıştır
-                log::info!("✅ User {} confirmed command: {}", from, pending_cmd);
-                self.db.clear_pending_command(from).await?;
-
-                // Onaylanan komutu çalıştır
-                if self.try_handle_smart_command(from, pending_cmd).await? {
-                    return Ok(());
-                }
-                // Komut çalıştırılamazsa yardım mesajı göster
-                self.send_help_message(from).await?;
-                return Ok(());
-            } else if trimmed == "0" {
-                // Reddetti
-                log::info!("❌ User {} rejected command: {}", from, pending_cmd);
-                self.db.clear_pending_command(from).await?;
-                self.whatsapp.send_message(from, "Tamam, iptal edildi.").await?;
-                return Ok(());
-            } else {
-                // 1 veya 0 değil - kullanıcı başka bir şey yazdı
-                // Pending command'ı temizle ve mesajı normal olarak işle
-                log::info!("ℹ️ User {} sent different message while pending command exists, clearing pending", from);
-                self.db.clear_pending_command(from).await?;
-                // Normal işleme devam et (aşağıdaki kod bloklarına düşecek)
-            }
-        }
+        // Pending command feature removed in v2.1 - fully natural language now
 
         // Quick water button responses (1, 2, 3) - sadece sayı ise
         let trimmed = message.trim();

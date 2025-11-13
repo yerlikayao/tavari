@@ -120,6 +120,19 @@ impl Database {
         .execute(&self.pool)
         .await?;
 
+        // Table for tracking 24h window warning status
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS window_warnings (
+                user_phone TEXT PRIMARY KEY REFERENCES users(phone_number) ON DELETE CASCADE,
+                last_warned_at TIMESTAMPTZ NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
         // Migration: Add new columns if they don't exist (for existing deployments)
         // This is safe to run multiple times
         sqlx::query(
@@ -723,105 +736,9 @@ impl Database {
     }
 
     // ============================================================
-    // Favorite Meals CRUD Functions
+    // Favorite Meals (Removed in v2.1 - feature deprecated)
+    // Table kept for backward compatibility with existing data
     // ============================================================
-
-    /// Add a new favorite meal
-    pub async fn add_favorite_meal(&self, favorite: &crate::models::FavoriteMeal) -> Result<i64> {
-        let result = sqlx::query(
-            r#"
-            INSERT INTO favorite_meals (user_phone, name, description, calories, created_at)
-            VALUES ($1, $2, $3, $4, $5)
-            ON CONFLICT (user_phone, name)
-            DO UPDATE SET description = $3, calories = $4
-            RETURNING id
-            "#,
-        )
-        .bind(&favorite.user_phone)
-        .bind(&favorite.name)
-        .bind(&favorite.description)
-        .bind(favorite.calories)
-        .bind(favorite.created_at)
-        .fetch_one(&self.pool)
-        .await?;
-
-        let id: i32 = result.get(0);
-        Ok(id as i64)
-    }
-
-    /// Get all favorite meals for a user
-    pub async fn get_favorite_meals(&self, user_phone: &str) -> Result<Vec<crate::models::FavoriteMeal>> {
-        let rows = sqlx::query(
-            r#"
-            SELECT id, user_phone, name, description, calories, created_at
-            FROM favorite_meals
-            WHERE user_phone = $1
-            ORDER BY created_at DESC
-            "#,
-        )
-        .bind(user_phone)
-        .fetch_all(&self.pool)
-        .await?;
-
-        let favorites = rows
-            .into_iter()
-            .map(|row| crate::models::FavoriteMeal {
-                id: row.get(0),
-                user_phone: row.get(1),
-                name: row.get(2),
-                description: row.get(3),
-                calories: row.get(4),
-                created_at: row.get(5),
-            })
-            .collect();
-
-        Ok(favorites)
-    }
-
-    /// Get a specific favorite meal by name
-    pub async fn get_favorite_meal_by_name(
-        &self,
-        user_phone: &str,
-        name: &str,
-    ) -> Result<Option<crate::models::FavoriteMeal>> {
-        let favorite = sqlx::query(
-            r#"
-            SELECT id, user_phone, name, description, calories, created_at
-            FROM favorite_meals
-            WHERE user_phone = $1 AND name = $2
-            "#,
-        )
-        .bind(user_phone)
-        .bind(name)
-        .fetch_optional(&self.pool)
-        .await?
-        .map(|row| crate::models::FavoriteMeal {
-            id: row.get(0),
-            user_phone: row.get(1),
-            name: row.get(2),
-            description: row.get(3),
-            calories: row.get(4),
-            created_at: row.get(5),
-        });
-
-        Ok(favorite)
-    }
-
-    /// Delete a favorite meal
-    pub async fn delete_favorite_meal(&self, user_phone: &str, name: &str) -> Result<()> {
-        sqlx::query(
-            r#"
-            DELETE FROM favorite_meals
-            WHERE user_phone = $1 AND name = $2
-            "#,
-        )
-        .bind(user_phone)
-        .bind(name)
-        .execute(&self.pool)
-        .await?;
-
-        Ok(())
-    }
 
     /// Update calorie goal for user
     pub async fn update_calorie_goal(&self, phone_number: &str, goal_kcal: i32) -> Result<()> {
@@ -856,41 +773,7 @@ impl Database {
     }
 
     /// Set pending command for user (waiting for confirmation)
-    pub async fn set_pending_command(&self, phone_number: &str, command: &str) -> Result<()> {
-        // Try to set pending_command, but silently ignore if column doesn't exist
-        let result = sqlx::query("UPDATE users SET pending_command = $1 WHERE phone_number = $2")
-            .bind(command)
-            .bind(phone_number)
-            .execute(&self.pool)
-            .await;
-
-        match result {
-            Ok(_) => Ok(()),
-            Err(e) if e.to_string().contains("pending_command") || e.to_string().contains("column") => {
-                log::debug!("Cannot set pending_command, column doesn't exist yet (will be added on restart)");
-                Ok(()) // Silently ignore, migration will add column on next restart
-            }
-            Err(e) => Err(e.into()),
-        }
-    }
-
-    /// Clear pending command for user
-    pub async fn clear_pending_command(&self, phone_number: &str) -> Result<()> {
-        // Try to clear pending_command, but silently ignore if column doesn't exist
-        let result = sqlx::query("UPDATE users SET pending_command = NULL WHERE phone_number = $1")
-            .bind(phone_number)
-            .execute(&self.pool)
-            .await;
-
-        match result {
-            Ok(_) => Ok(()),
-            Err(e) if e.to_string().contains("pending_command") || e.to_string().contains("column") => {
-                log::debug!("Cannot clear pending_command, column doesn't exist yet (will be added on restart)");
-                Ok(()) // Silently ignore
-            }
-            Err(e) => Err(e.into()),
-        }
-    }
+    // Pending command methods removed in v2.1 - feature deprecated
 
     // ============================================================
     // Conversation Logging Functions
@@ -1008,6 +891,121 @@ impl Database {
         if let Some(n) = name {
             log::debug!("Updated name for {}: {}", phone_number, n);
         }
+        Ok(())
+    }
+
+    /// Check if user has sent a message in the last 24 hours (WhatsApp Business API window)
+    pub async fn is_within_24h_window(&self, phone_number: &str) -> Result<bool> {
+        use chrono::{Duration, Utc};
+
+        let cutoff = Utc::now() - Duration::hours(24);
+
+        let result = sqlx::query(
+            r#"
+            SELECT created_at FROM conversations
+            WHERE user_phone = $1 AND direction = 'incoming'
+            ORDER BY created_at DESC
+            LIMIT 1
+            "#
+        )
+        .bind(phone_number)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(row) = result {
+            let last_message: chrono::DateTime<Utc> = row.get(0);
+            Ok(last_message > cutoff)
+        } else {
+            // No incoming messages yet - not in window
+            Ok(false)
+        }
+    }
+
+    /// Check 24h window status and return hours since last message
+    /// Returns: (is_within_window, hours_since_last_message, needs_warning)
+    /// needs_warning is true if user is at 20-23 hours of inactivity
+    pub async fn check_24h_window_detailed(&self, phone_number: &str) -> Result<(bool, Option<i64>, bool)> {
+        use chrono::Utc;
+
+        let result = sqlx::query(
+            r#"
+            SELECT created_at FROM conversations
+            WHERE user_phone = $1 AND direction = 'incoming'
+            ORDER BY created_at DESC
+            LIMIT 1
+            "#
+        )
+        .bind(phone_number)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(row) = result {
+            let last_message: chrono::DateTime<Utc> = row.get(0);
+            let now = Utc::now();
+            let duration = now.signed_duration_since(last_message);
+            let hours = duration.num_hours();
+
+            let is_within_window = hours < 24;
+            let needs_warning = hours >= 20 && hours < 24;
+
+            Ok((is_within_window, Some(hours), needs_warning))
+        } else {
+            // No incoming messages yet - not in window, no warning needed
+            Ok((false, None, false))
+        }
+    }
+
+    /// Check if user was already warned about 24h window expiration
+    /// Returns true if user was warned in the last 4 hours
+    pub async fn was_recently_warned(&self, phone_number: &str) -> Result<bool> {
+        use chrono::{Duration, Utc};
+
+        let cutoff = Utc::now() - Duration::hours(4);
+
+        let result = sqlx::query(
+            r#"
+            SELECT last_warned_at FROM window_warnings
+            WHERE user_phone = $1 AND last_warned_at > $2
+            "#
+        )
+        .bind(phone_number)
+        .bind(cutoff)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(result.is_some())
+    }
+
+    /// Mark user as warned about 24h window expiration
+    pub async fn mark_as_warned(&self, phone_number: &str) -> Result<()> {
+        use chrono::Utc;
+
+        sqlx::query(
+            r#"
+            INSERT INTO window_warnings (user_phone, last_warned_at)
+            VALUES ($1, $2)
+            ON CONFLICT (user_phone) DO UPDATE SET last_warned_at = EXCLUDED.last_warned_at
+            "#
+        )
+        .bind(phone_number)
+        .bind(Utc::now())
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Clear warning status when user sends a new message (called when message received)
+    pub async fn clear_warning_status(&self, phone_number: &str) -> Result<()> {
+        sqlx::query(
+            r#"
+            DELETE FROM window_warnings WHERE user_phone = $1
+            "#
+        )
+        .bind(phone_number)
+        .execute(&self.pool)
+        .await?;
+
         Ok(())
     }
 

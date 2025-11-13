@@ -29,6 +29,9 @@ impl ReminderService {
         // Su içme hatırlatması (Her 2 saatte bir, 08:00-22:00 arası)
         self.add_water_reminder("0 0 8,10,12,14,16,18,20,22 * * *").await?;
 
+        // 24-hour window warning - Her saatte bir kontrol et
+        self.add_window_warning_check("0 0 * * * *").await?;
+
         // Günlük özet (22:00)
         self.add_daily_summary("0 0 22 * * *").await?;
 
@@ -96,23 +99,30 @@ impl ReminderService {
                                         if has_breakfast {
                                             log::debug!("⏭️ Skipping breakfast reminder for {} - already logged today", user.phone_number);
                                         } else {
-                                            let msg = "☀️ *Günaydın! Kahvaltı zamanı*\n\n\
+                                            // Check if user is within 24h WhatsApp Business API window
+                                            if let Ok(within_window) = db.is_within_24h_window(&user.phone_number).await {
+                                                if within_window {
+                                                    let msg = "☀️ *Günaydın! Kahvaltı zamanı*\n\n\
 Ne yediğini kaydetmek ister misin?\n\
 Fotoğraf gönder veya yaz:\n\
 • \"yumurta ve peynir\"\n\
 • \"kahvaltı yaptım\"";
-                                            let _ = whatsapp.send_message(&user.phone_number, msg).await;
+                                                    let _ = whatsapp.send_message(&user.phone_number, msg).await;
 
-                                            // Log reminder
-                                            let _ = db.log_conversation(
-                                                &user.phone_number,
-                                                ConversationDirection::Outgoing,
-                                                MessageType::Reminder,
-                                                msg,
-                                                Some(serde_json::json!({"reminder_type": "breakfast", "time": breakfast_time})),
-                                            ).await;
+                                                    // Log reminder
+                                                    let _ = db.log_conversation(
+                                                        &user.phone_number,
+                                                        ConversationDirection::Outgoing,
+                                                        MessageType::Reminder,
+                                                        msg,
+                                                        Some(serde_json::json!({"reminder_type": "breakfast", "time": breakfast_time})),
+                                                    ).await;
 
-                                            log::info!("📤 Sent breakfast reminder to {} ({})", user.phone_number, user.timezone);
+                                                    log::info!("📤 Sent breakfast reminder to {} ({})", user.phone_number, user.timezone);
+                                                } else {
+                                                    log::debug!("⏭️ Skipping breakfast reminder for {} - outside 24h window", user.phone_number);
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -132,23 +142,30 @@ Fotoğraf gönder veya yaz:\n\
                                         if has_lunch {
                                             log::debug!("⏭️ Skipping lunch reminder for {} - already logged today", user.phone_number);
                                         } else {
-                                            let msg = "🌞 *Öğle yemeği vakti!*\n\n\
+                                            // Check if user is within 24h WhatsApp Business API window
+                                            if let Ok(within_window) = db.is_within_24h_window(&user.phone_number).await {
+                                                if within_window {
+                                                    let msg = "🌞 *Öğle yemeği vakti!*\n\n\
 Ne yediğini kaydetmek ister misin?\n\
 Fotoğraf gönder veya yaz:\n\
 • \"tavuk pilav ve salata\"\n\
 • \"öğle yemeği yaptım\"";
-                                            let _ = whatsapp.send_message(&user.phone_number, msg).await;
+                                                    let _ = whatsapp.send_message(&user.phone_number, msg).await;
 
-                                            // Log reminder
-                                            let _ = db.log_conversation(
-                                                &user.phone_number,
-                                                ConversationDirection::Outgoing,
-                                                MessageType::Reminder,
-                                                msg,
-                                                Some(serde_json::json!({"reminder_type": "lunch", "time": lunch_time})),
-                                            ).await;
+                                                    // Log reminder
+                                                    let _ = db.log_conversation(
+                                                        &user.phone_number,
+                                                        ConversationDirection::Outgoing,
+                                                        MessageType::Reminder,
+                                                        msg,
+                                                        Some(serde_json::json!({"reminder_type": "lunch", "time": lunch_time})),
+                                                    ).await;
 
-                                            log::info!("📤 Sent lunch reminder to {} ({})", user.phone_number, user.timezone);
+                                                    log::info!("📤 Sent lunch reminder to {} ({})", user.phone_number, user.timezone);
+                                                } else {
+                                                    log::debug!("⏭️ Skipping lunch reminder for {} - outside 24h window", user.phone_number);
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -168,23 +185,30 @@ Fotoğraf gönder veya yaz:\n\
                                         if has_dinner {
                                             log::debug!("⏭️ Skipping dinner reminder for {} - already logged today", user.phone_number);
                                         } else {
-                                            let msg = "🌙 *Akşam yemeği zamanı!*\n\n\
+                                            // Check if user is within 24h WhatsApp Business API window
+                                            if let Ok(within_window) = db.is_within_24h_window(&user.phone_number).await {
+                                                if within_window {
+                                                    let msg = "🌙 *Akşam yemeği zamanı!*\n\n\
 Ne yediğini kaydetmek ister misin?\n\
 Fotoğraf gönder veya yaz:\n\
 • \"balık ve zeytinyağlılar\"\n\
 • \"akşam yemeği yaptım\"";
-                                            let _ = whatsapp.send_message(&user.phone_number, msg).await;
+                                                    let _ = whatsapp.send_message(&user.phone_number, msg).await;
 
-                                            // Log reminder
-                                            let _ = db.log_conversation(
-                                                &user.phone_number,
-                                                ConversationDirection::Outgoing,
-                                                MessageType::Reminder,
-                                                msg,
-                                                Some(serde_json::json!({"reminder_type": "dinner", "time": dinner_time})),
-                                            ).await;
+                                                    // Log reminder
+                                                    let _ = db.log_conversation(
+                                                        &user.phone_number,
+                                                        ConversationDirection::Outgoing,
+                                                        MessageType::Reminder,
+                                                        msg,
+                                                        Some(serde_json::json!({"reminder_type": "dinner", "time": dinner_time})),
+                                                    ).await;
 
-                                            log::info!("📤 Sent dinner reminder to {} ({})", user.phone_number, user.timezone);
+                                                    log::info!("📤 Sent dinner reminder to {} ({})", user.phone_number, user.timezone);
+                                                } else {
+                                                    log::debug!("⏭️ Skipping dinner reminder for {} - outside 24h window", user.phone_number);
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -251,18 +275,25 @@ Kaydetmek için yaz:\n\
 
                             // Su içme saatleri: 8,10,12,14,16,18,20,22
                             if [8, 10, 12, 14, 16, 18, 20, 22].contains(&current_hour) {
-                                let _ = whatsapp.send_message(&user.phone_number, message).await;
+                                // Check if user is within 24h WhatsApp Business API window
+                                if let Ok(within_window) = db.is_within_24h_window(&user.phone_number).await {
+                                    if within_window {
+                                        let _ = whatsapp.send_message(&user.phone_number, message).await;
 
-                                // Log water reminder
-                                let _ = db.log_conversation(
-                                    &user.phone_number,
-                                    ConversationDirection::Outgoing,
-                                    MessageType::Reminder,
-                                    message,
-                                    Some(serde_json::json!({"reminder_type": "water", "hour": current_hour})),
-                                ).await;
+                                        // Log water reminder
+                                        let _ = db.log_conversation(
+                                            &user.phone_number,
+                                            ConversationDirection::Outgoing,
+                                            MessageType::Reminder,
+                                            message,
+                                            Some(serde_json::json!({"reminder_type": "water", "hour": current_hour})),
+                                        ).await;
 
-                                log::info!("📤 Sent water reminder to {} at {}:00 ({})", user.phone_number, current_hour, user.timezone);
+                                        log::info!("📤 Sent water reminder to {} at {}:00 ({})", user.phone_number, current_hour, user.timezone);
+                                    } else {
+                                        log::debug!("⏭️ Skipping water reminder for {} - outside 24h window", user.phone_number);
+                                    }
+                                }
                             }
                         } else {
                             log::debug!("⏭️ Skipping water reminder for {} (reminder={}, onboarded={})", user.phone_number, user.water_reminder, user.onboarding_completed);
@@ -349,6 +380,91 @@ Kaydetmek için yaz:\n\
 
         self.scheduler.add(job).await?;
         log::info!("Added daily summary reminder (timezone-aware)");
+        Ok(())
+    }
+
+    async fn add_window_warning_check(&mut self, _schedule: &str) -> Result<()> {
+        let db = self.db.clone();
+        let whatsapp = self.whatsapp.clone();
+
+        // Her saat başı kontrol et
+        let job = Job::new_async("0 0 * * * *", move |_uuid, _l| {
+            let db = db.clone();
+            let whatsapp = whatsapp.clone();
+
+            Box::pin(async move {
+                if let Ok(users) = db.get_active_users().await {
+                    log::debug!("⏰ Window warning check running for {} users", users.len());
+                    for user in users {
+                        if !user.onboarding_completed || !user.opted_in {
+                            continue;
+                        }
+
+                        // Check window status
+                        if let Ok((is_within_window, hours_since_last, needs_warning)) =
+                            db.check_24h_window_detailed(&user.phone_number).await
+                        {
+                            // Only warn if:
+                            // 1. User needs warning (20-23 hours)
+                            // 2. User hasn't been warned recently
+                            // 3. User is still within window (to actually send the message)
+                            if needs_warning && is_within_window {
+                                if let Ok(was_warned) = db.was_recently_warned(&user.phone_number).await {
+                                    if !was_warned {
+                                        let hours = hours_since_last.unwrap_or(0);
+                                        let hours_left = 24 - hours;
+
+                                        let message = format!(
+                                            "👋 *Merhaba!*\n\n\
+                                            Uzun zamandır ({} saat) mesaj atmadın.\n\n\
+                                            WhatsApp kuralları gereği, 24 saat içinde mesaj atmazsan \
+                                            otomatik hatırlatıcıları alamazsın.\n\n\
+                                            ⏰ *Yaklaşık {} saat sonra* hatırlatıcıları kaybedeceksin.\n\n\
+                                            Hatırlatıcıları almaya devam etmek için herhangi bir mesaj gönder! 😊\n\n\
+                                            Örnek: \"Merhaba\" veya \"Rapor\"",
+                                            hours, hours_left
+                                        );
+
+                                        // Send warning message
+                                        if let Ok(()) = whatsapp.send_message(&user.phone_number, &message).await {
+                                            // Mark as warned
+                                            let _ = db.mark_as_warned(&user.phone_number).await;
+
+                                            // Log warning
+                                            let _ = db.log_conversation(
+                                                &user.phone_number,
+                                                ConversationDirection::Outgoing,
+                                                MessageType::Reminder,
+                                                &message,
+                                                Some(serde_json::json!({
+                                                    "reminder_type": "window_warning",
+                                                    "hours_since_last_message": hours,
+                                                    "hours_until_expiry": hours_left
+                                                })),
+                                            ).await;
+
+                                            log::info!(
+                                                "⚠️ Sent 24h window warning to {} ({} hours since last message)",
+                                                user.phone_number, hours
+                                            );
+                                        }
+                                    } else {
+                                        log::debug!(
+                                            "⏭️ Skipping warning for {} - already warned recently",
+                                            user.phone_number
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    log::debug!("✅ Window warning check completed");
+                }
+            })
+        })?;
+
+        self.scheduler.add(job).await?;
+        log::info!("Added 24h window warning check (hourly)");
         Ok(())
     }
 

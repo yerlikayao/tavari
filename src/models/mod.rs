@@ -94,16 +94,6 @@ pub struct DailyStats {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FavoriteMeal {
-    pub id: Option<i64>,
-    pub user_phone: String,
-    pub name: String,          // Kısa isim (örn: "fav1", "tavuklu-pilav")
-    pub description: String,   // Tam açıklama (örn: "Tavuk göğsü ve pilav")
-    pub calories: f64,
-    pub created_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Conversation {
     pub id: Option<i64>,
     pub user_phone: String,
