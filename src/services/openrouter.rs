@@ -601,6 +601,12 @@ impl OpenRouterService {
                      ÖRNEKLER:\n\
                      \"kahvaltı yaptım\" -> MEAL:kahvaltı\n\
                      \"pizza\" -> MEAL:pizza\n\
+                     \"3 ateş haşlanmış yumurta ve 2 dilim tam çavdarlı ekmek yedim\" -> MEAL:3 ateş haşlanmış yumurta ve 2 dilim tam çavdarlı ekmek\n\
+                     \"öğlen 150 gram haşlanmış kıyma ve salata yedim\" -> MEAL:150 gram haşlanmış kıyma ve salata\n\
+                     \"150 gr tavuk ızgara ve 80 gr makarna yedim\" -> MEAL:150 gr tavuk ızgara ve 80 gr makarna\n\
+                     \"150 gr haşlanmış kıyma ve salata yedim\" -> MEAL:150 gr haşlanmış kıyma ve salata\n\
+                     \"Tavuk göğsü ve makarna yedim\" -> MEAL:tavuk göğsü ve makarna\n\
+                     \"150 gr tavuk göğsü 80 gr makarna Salata\" -> MEAL:150 gr tavuk göğsü 80 gr makarna salata\n\
                      \"su içtim\" -> WATER:200\n\
                      \"250 ml\" -> WATER:250\n\
                      \"kalori hedefim 2500\" -> CALORIE_GOAL:2500\n\
