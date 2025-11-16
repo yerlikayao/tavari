@@ -792,7 +792,7 @@ impl Database {
             SELECT id, user_phone, direction, message_type, content, metadata, created_at
             FROM conversations
             WHERE user_phone = $1
-            ORDER BY created_at DESC
+            ORDER BY created_at ASC
             LIMIT $2
             "#,
         )
