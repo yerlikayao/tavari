@@ -35,6 +35,23 @@ impl MessageHandler {
         self.db.clear_warning_status(phone).await
     }
 
+    /// Send message and log to conversation history
+    async fn send_and_log(&self, phone: &str, message: &str) -> Result<()> {
+        // Send the message
+        self.whatsapp.send_message(phone, message).await?;
+
+        // Log to conversation history
+        let _ = self.db.log_conversation(
+            phone,
+            ConversationDirection::Outgoing,
+            MessageType::Text,
+            message,
+            None,
+        ).await;
+
+        Ok(())
+    }
+
     pub async fn handle_message(
         &self,
         from: &str,
@@ -131,12 +148,12 @@ impl MessageHandler {
             Ok(UserIntent::SetCalorieGoal(amount)) => {
                 log::info!("🎯 User wants to set calorie goal: {} kcal", amount);
                 self.db.update_calorie_goal(from, amount).await?;
-                self.whatsapp.send_message(from, &format!("✅ Kalori hedefin {} kcal olarak ayarlandı!", amount)).await?;
+                self.send_and_log(from, &format!("✅ Kalori hedefin {} kcal olarak ayarlandı!", amount)).await?;
             }
             Ok(UserIntent::SetWaterGoal(amount)) => {
                 log::info!("💧 User wants to set water goal: {} ml", amount);
                 self.db.update_water_goal(from, amount).await?;
-                self.whatsapp.send_message(from, &format!("✅ Su hedefin {} ml olarak ayarlandı!", amount)).await?;
+                self.send_and_log(from, &format!("✅ Su hedefin {} ml olarak ayarlandı!", amount)).await?;
             }
             Ok(UserIntent::SetMealTime(meal_type, time)) => {
                 log::info!("⏰ User wants to set meal time: {} at {}", meal_type, time);
@@ -145,7 +162,7 @@ impl MessageHandler {
                     "ogle" | "öğle" => "lunch",
                     "aksam" | "akşam" => "dinner",
                     _ => {
-                        self.whatsapp.send_message(from, "❌ Geçersiz öğün tipi. Kullan: kahvaltı, öğle, akşam").await?;
+                        self.send_and_log(from, "❌ Geçersiz öğün tipi. Kullan: kahvaltı, öğle, akşam").await?;
                         return Ok(());
                     }
                 };
@@ -156,12 +173,12 @@ impl MessageHandler {
                     "dinner" => "Akşam",
                     _ => "Öğün",
                 };
-                self.whatsapp.send_message(from, &format!("✅ {} saatin {} olarak ayarlandı!", meal_name_tr, time)).await?;
+                self.send_and_log(from, &format!("✅ {} saatin {} olarak ayarlandı!", meal_name_tr, time)).await?;
             }
             Ok(UserIntent::SetSilentHours(start, end)) => {
                 log::info!("🌙 User wants to set silent hours: {} - {}", start, end);
                 self.db.update_silent_hours(from, &start, &end).await?;
-                self.whatsapp.send_message(from, &format!("✅ Sessiz saatler {} - {} olarak ayarlandı!", start, end)).await?;
+                self.send_and_log(from, &format!("✅ Sessiz saatler {} - {} olarak ayarlandı!", start, end)).await?;
             }
             Ok(UserIntent::RunCommand(command)) => {
                 log::info!("⚙️ User wants to run command: {}", command);
@@ -330,7 +347,7 @@ impl MessageHandler {
                     stats.meals_count
                 );
 
-                self.whatsapp.send_message(from, &summary).await?;
+                self.send_and_log(from, &summary).await?;
             }
             Err(e) => {
                 log::error!("❌ Failed to analyze text meal: {}", e);
@@ -412,7 +429,7 @@ impl MessageHandler {
                     updated_image_count
                 );
 
-                self.whatsapp.send_message(from, &summary).await?;
+                self.send_and_log(from, &summary).await?;
             }
             Err(e) => {
                 log::error!("Image analysis error: {}", e);
@@ -454,7 +471,7 @@ impl MessageHandler {
             water_goal - stats.total_water_ml as i32
         );
 
-        self.whatsapp.send_message(from, &response).await?;
+        self.send_and_log(from, &response).await?;
 
         Ok(())
     }
@@ -513,7 +530,7 @@ impl MessageHandler {
                 response.push_str(&format!("💧 Su: {} ml/gün\n\n", avg_water));
                 response.push_str("💡 Detaylı tavsiye için 'tavsiye' yaz");
 
-                self.whatsapp.send_message(from, &response).await?;
+                self.send_and_log(from, &response).await?;
                 true
             }
             // Rapor komutları
@@ -530,7 +547,7 @@ impl MessageHandler {
                     user.daily_calorie_goal.unwrap_or(2000),
                     user.daily_water_goal.unwrap_or(2000),
                 );
-                self.whatsapp.send_message(from, &report).await?;
+                self.send_and_log(from, &report).await?;
                 true
             }
             // Yardım komutları
@@ -549,7 +566,7 @@ impl MessageHandler {
                 let water_goal = user.daily_water_goal.unwrap_or(2000);
 
                 if meals.is_empty() {
-                    self.whatsapp.send_message(from, "📜 Henüz kayıtlı öğün yok.").await?;
+                    self.send_and_log(from, "📜 Henüz kayıtlı öğün yok.").await?;
                 } else {
                     let mut response = "📜 *Son Aktiviteler*\n\n".to_string();
 
@@ -571,7 +588,7 @@ impl MessageHandler {
                     }
 
                     response.push_str("💡 *İpucu:* Detaylı rapor için 'rapor' yaz");
-                    self.whatsapp.send_message(from, &response).await?;
+                    self.send_and_log(from, &response).await?;
                 }
                 true
             }
@@ -595,7 +612,7 @@ impl MessageHandler {
                     .await
                 {
                     Ok(advice) => {
-                        self.whatsapp.send_message(from, &advice).await?;
+                        self.send_and_log(from, &advice).await?;
                     }
                     Err(e) => {
                         log::error!("❌ Failed to get nutrition advice: {:?}", e);
@@ -704,13 +721,13 @@ impl MessageHandler {
             user.timezone
         );
 
-        self.whatsapp.send_message(from, &message).await?;
+        self.send_and_log(from, &message).await?;
         Ok(())
     }
 
     async fn handle_time_command(&self, from: &str, cmd_parts: &[&str]) -> Result<()> {
         if cmd_parts.len() < 3 {
-            self.whatsapp.send_message(
+            self.send_and_log(
                 from,
                 "❌ Kullanım: saat [kahvalti|ogle|aksam] HH:MM\nÖrnek: saat kahvalti 09:00"
             ).await?;
@@ -722,7 +739,7 @@ impl MessageHandler {
 
         // Validate time format (HH:MM) with proper hour/minute range checks
         if !self.validate_time_format(time) {
-            self.whatsapp.send_message(
+            self.send_and_log(
                 from,
                 "❌ Geçersiz saat formatı\nHH:MM olmalı (örn: 09:00, 13:30)"
             ).await?;
@@ -734,7 +751,7 @@ impl MessageHandler {
             "ogle" | "öğle" | "lunch" => "lunch",
             "aksam" | "akşam" | "dinner" => "dinner",
             _ => {
-                self.whatsapp.send_message(
+                self.send_and_log(
                     from,
                     "❌ Geçersiz öğün tipi. Kullan: kahvalti, ogle, aksam"
                 ).await?;
@@ -751,7 +768,7 @@ impl MessageHandler {
             _ => "Öğün"
         };
 
-        self.whatsapp.send_message(
+        self.send_and_log(
             from,
             &format!("✅ {} saati {} olarak güncellendi!", meal_display, time)
         ).await?;
@@ -761,7 +778,7 @@ impl MessageHandler {
 
     async fn handle_timezone_command(&self, from: &str, cmd_parts: &[&str]) -> Result<()> {
         if cmd_parts.len() < 2 {
-            self.whatsapp.send_message(
+            self.send_and_log(
                 from,
                 "❌ Kullanım: timezone [zaman dilimi]\n\n\
                  Örnekler:\n\
@@ -780,13 +797,13 @@ impl MessageHandler {
                 // Valid timezone, update in database
                 self.db.update_timezone(from, timezone).await?;
 
-                self.whatsapp.send_message(
+                self.send_and_log(
                     from,
                     &format!("✅ Zaman diliminiz {} olarak güncellendi!", timezone)
                 ).await?;
             }
             Err(_) => {
-                self.whatsapp.send_message(
+                self.send_and_log(
                     from,
                     &format!("❌ Geçersiz zaman dilimi: {}\n\nÖrnek: Europe/Istanbul", timezone)
                 ).await?;
@@ -798,7 +815,7 @@ impl MessageHandler {
 
     async fn handle_water_goal_command(&self, from: &str, cmd_parts: &[&str]) -> Result<()> {
         if cmd_parts.len() < 2 {
-            self.whatsapp.send_message(
+            self.send_and_log(
                 from,
                 "❌ Kullanım: suhedefi [ml]\nÖrnek: suhedefi 2500"
             ).await?;
@@ -810,7 +827,7 @@ impl MessageHandler {
             Ok(goal) if (500..=10000).contains(&goal) => {
                 self.db.update_water_goal(from, goal).await?;
 
-                self.whatsapp.send_message(
+                self.send_and_log(
                     from,
                     &format!("✅ Günlük su hedefiniz {} ml ({} litre) olarak güncellendi!",
                         goal,
@@ -818,13 +835,13 @@ impl MessageHandler {
                 ).await?;
             }
             Ok(goal) => {
-                self.whatsapp.send_message(
+                self.send_and_log(
                     from,
                     &format!("❌ Geçersiz hedef: {} ml\nLütfen 500-10000 ml arası bir değer girin.", goal)
                 ).await?;
             }
             Err(_) => {
-                self.whatsapp.send_message(
+                self.send_and_log(
                     from,
                     &format!("❌ Geçersiz sayı: {}\nLütfen sayı girin (örn: 2000)", goal_str)
                 ).await?;
@@ -862,7 +879,7 @@ impl MessageHandler {
                    • \"sessiz saat 23-7\"\n\n\
                    *💡 İpucu:* Normal konuşarak mesaj at!";
 
-        self.whatsapp.send_message(to, help).await?;
+        self.send_and_log(to, help).await?;
         Ok(())
     }
 
@@ -890,7 +907,7 @@ impl MessageHandler {
         if parts.len() < 2 {
             let user = self.db.get_user(from).await?.ok_or_else(|| anyhow::anyhow!("User not found"))?;
             let current_goal = user.daily_calorie_goal.unwrap_or(2000);
-            self.whatsapp.send_message(
+            self.send_and_log(
                 from,
                 &format!(
                     "🎯 *Günlük Kalori Hedefi*\n\n\
@@ -907,7 +924,7 @@ impl MessageHandler {
         let goal: i32 = parts[1].parse().map_err(|_| anyhow::anyhow!("Geçersiz sayı"))?;
 
         if !(500..=5000).contains(&goal) {
-            self.whatsapp.send_message(
+            self.send_and_log(
                 from,
                 "❌ Kalori hedefi 500-5000 kcal arasında olmalıdır."
             ).await?;
@@ -915,7 +932,7 @@ impl MessageHandler {
         }
 
         self.db.update_calorie_goal(from, goal).await?;
-        self.whatsapp.send_message(
+        self.send_and_log(
             from,
             &format!("✅ Günlük kalori hedefiniz {} kcal olarak güncellendi!", goal)
         ).await?;
@@ -929,7 +946,7 @@ impl MessageHandler {
             let start = user.silent_hours_start.as_deref().unwrap_or("23:00");
             let end = user.silent_hours_end.as_deref().unwrap_or("07:00");
 
-            self.whatsapp.send_message(
+            self.send_and_log(
                 from,
                 &format!(
                     "🌙 *Sessiz Saatler*\n\n\
@@ -948,7 +965,7 @@ impl MessageHandler {
         let end = parts[2];
 
         if !self.validate_time_format(start) || !self.validate_time_format(end) {
-            self.whatsapp.send_message(
+            self.send_and_log(
                 from,
                 "❌ Geçersiz saat formatı. HH:MM formatında girin.\nÖrnek: sessiz 23:00 07:00"
             ).await?;
@@ -956,7 +973,7 @@ impl MessageHandler {
         }
 
         self.db.update_silent_hours(from, start, end).await?;
-        self.whatsapp.send_message(
+        self.send_and_log(
             from,
             &format!("✅ Sessiz saatleriniz {} - {} olarak güncellendi!", start, end)
         ).await?;
