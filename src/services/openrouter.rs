@@ -576,52 +576,60 @@ impl OpenRouterService {
             content: vec![ContentPart::Text {
                 content_type: "text".to_string(),
                 text: format!(
-                    "Sen bir akıllı beslenme asistanısın. Kullanıcının mesajını analiz et ve ne yapmak istediğini anla.\n\
+                    "Sen bir akıllı beslenme asistanısın. Kullanıcının mesajını analiz et ve SADECE kategori etiketini döndür.\n\
                      \n\
                      KULLANICI MESAJI: \"{}\"\n\
                      \n\
-                     ANALİZ ADI:\n\
-                     1. Kullanıcı ne yapmak istiyor?\n\
-                     2. Yemek mi kaydedecek?\n\
-                     3. Su mu içti?\n\
-                     4. Hedef mi ayarlıyor? (kalori hedefi, su hedefi)\n\
-                     5. Ayar mı değiştiriyor? (öğün saati, sessiz saat)\n\
-                     6. Komut mu çalıştırıyor?\n\
+                     KURALLAR:\n\
+                     1. Cevabında SADECE belirtilen formatlardan birini kullan\n\
+                     2. Başka açıklama, tire (-), yıldız (*) ekleme\n\
+                     3. Su miktarları için ÇOK ÖNEMLİ:\n\
+                        - 1 lt = 1000 ml\n\
+                        - 2 lt = 2000 ml\n\
+                        - 1 litre = 1000 ml\n\
+                        - 2.5 litre = 2500 ml\n\
+                        - 1 bardak = 200 ml\n\
+                     4. WATER: ve WATER_GOAL: sonrasına SADECE SAYI yaz (ml cinsinden, birim YAZMA)\n\
+                     5. Yemek için: tüm açıklamayı MEAL: sonrasına ekle\n\
                      \n\
-                     CEVAP FORMATI (TEK SATIR, AÇIKLAMA YAPMA):\n\
-                     - Yemek kaydı: MEAL:[açıklama]\n\
-                     - Su kaydı: WATER:[miktar ml]\n\
-                     - Kalori hedefi: CALORIE_GOAL:[miktar]\n\
-                     - Su hedefi: WATER_GOAL:[miktar ml]\n\
-                     - Öğün saati: MEAL_TIME:[kahvalti/ogle/aksam]:[HH:MM]\n\
-                     - Sessiz saat: SILENT:[başlangıç HH:MM]:[bitiş HH:MM]\n\
-                     - Komut: COMMAND:[komut adı]\n\
-                     - Belirsiz: UNKNOWN\n\
+                     İZİN VERİLEN FORMATLAR:\n\
+                     MEAL:[yemek açıklaması]\n\
+                     WATER:[sadece sayı - ml cinsinden]\n\
+                     CALORIE_GOAL:[sadece sayı]\n\
+                     WATER_GOAL:[sadece sayı - ml cinsinden]\n\
+                     MEAL_TIME:[kahvalti/ogle/aksam]:[HH:MM]\n\
+                     SILENT:[HH:MM]:[HH:MM]\n\
+                     COMMAND:[komut adı]\n\
+                     UNKNOWN\n\
                      \n\
-                     ÖRNEKLER:\n\
+                     ÖRNEKLER (SADECE ok sonrası kısmı döndür):\n\
                      \"kahvaltı yaptım\" -> MEAL:kahvaltı\n\
-                     \"pizza\" -> MEAL:pizza\n\
+                     \"pizza yedim\" -> MEAL:pizza\n\
                      \"3 ateş haşlanmış yumurta ve 2 dilim tam çavdarlı ekmek yedim\" -> MEAL:3 ateş haşlanmış yumurta ve 2 dilim tam çavdarlı ekmek\n\
                      \"öğlen 150 gram haşlanmış kıyma ve salata yedim\" -> MEAL:150 gram haşlanmış kıyma ve salata\n\
                      \"150 gr tavuk ızgara ve 80 gr makarna yedim\" -> MEAL:150 gr tavuk ızgara ve 80 gr makarna\n\
-                     \"150 gr haşlanmış kıyma ve salata yedim\" -> MEAL:150 gr haşlanmış kıyma ve salata\n\
                      \"Tavuk göğsü ve makarna yedim\" -> MEAL:tavuk göğsü ve makarna\n\
-                     \"150 gr tavuk göğsü 80 gr makarna Salata\" -> MEAL:150 gr tavuk göğsü 80 gr makarna salata\n\
                      \"su içtim\" -> WATER:200\n\
+                     \"1 bardak su içtim\" -> WATER:200\n\
                      \"250 ml\" -> WATER:250\n\
+                     \"500 ml su\" -> WATER:500\n\
+                     \"1 lt su içtim\" -> WATER:1000\n\
+                     \"1 litre\" -> WATER:1000\n\
+                     \"1 litre su içtim\" -> WATER:1000\n\
+                     \"2 lt su içtim\" -> WATER:2000\n\
+                     \"2.5 litre su içtim\" -> WATER:2500\n\
+                     \"3 litre su içtim\" -> WATER:3000\n\
+                     \"4 lt su içtim\" -> WATER:4000\n\
                      \"kalori hedefim 2500\" -> CALORIE_GOAL:2500\n\
-                     \"kalori hedefi 2000 olsun\" -> CALORIE_GOAL:2000\n\
                      \"su hedefim 3 litre\" -> WATER_GOAL:3000\n\
                      \"su hedefim 2.5 litre\" -> WATER_GOAL:2500\n\
                      \"kahvaltı saatim 9\" -> MEAL_TIME:kahvalti:09:00\n\
-                     \"kahvaltı saatimi 09:00 yap\" -> MEAL_TIME:kahvalti:09:00\n\
                      \"öğle yemeği saatim 13\" -> MEAL_TIME:ogle:13:00\n\
-                     \"akşam saati 19:00\" -> MEAL_TIME:aksam:19:00\n\
                      \"sessiz saat 23-7\" -> SILENT:23:00:07:00\n\
-                     \"sessiz saatler 23:00 07:00\" -> SILENT:23:00:07:00\n\
                      \"rapor\" -> COMMAND:rapor\n\
-                     \"ayarlar\" -> COMMAND:ayarlar\n\
-                     \"merhaba\" -> UNKNOWN",
+                     \"merhaba\" -> UNKNOWN\n\
+                     \n\
+                     DİKKAT: 1 lt = 1000 ml, 2 lt = 2000 ml. Litre değerini 1000 ile çarp!",
                     user_input
                 ),
             }],
@@ -630,7 +638,7 @@ impl OpenRouterService {
         let request = ChatRequest {
             model: self.model.clone(),
             messages,
-            max_tokens: 50,
+            max_tokens: 100,
         };
 
         log::info!("📤 Sending intent detection request to OpenRouter");
@@ -662,26 +670,61 @@ impl OpenRouterService {
             return Ok(UserIntent::Unknown);
         }
 
-        let response_text = chat_response.choices[0].message.content.trim();
-        log::info!("💡 AI detected intent: {}", response_text);
+        let original_response = chat_response.choices[0].message.content.trim();
+        log::info!("💡 AI detected intent: {}", original_response);
 
-        // Parse the response
+        // Simple cleanup: remove common prefixes AI might add
+        let mut response_text = original_response;
+        response_text = response_text.trim_start_matches("- ").trim_start_matches("* ");
+
+        // Remove Turkish prefixes like "Su kaydı: ", "Yemek kaydı: " etc.
+        let prefixes = [
+            "Yemek kaydı: ", "Su kaydı: ", "Kalori hedefi: ", "Su hedefi: ",
+            "Öğün saati: ", "Sessiz saat: ", "Komut: ", "Belirsiz: "
+        ];
+        for prefix in &prefixes {
+            if response_text.starts_with(prefix) {
+                response_text = response_text.strip_prefix(prefix).unwrap();
+                break;
+            }
+        }
+
+        log::info!("🧹 Cleaned intent: {}", response_text);
+
+        // Parse the response - strict matching
         if let Some(meal_desc) = response_text.strip_prefix("MEAL:") {
-            Ok(UserIntent::LogMeal(meal_desc.to_string()))
+            Ok(UserIntent::LogMeal(meal_desc.trim().to_string()))
         } else if let Some(water_str) = response_text.strip_prefix("WATER:") {
-            let amount = water_str.parse::<i32>().unwrap_or(200);
+            // Clean up units if AI added them (e.g., "4000 ml" -> "4000")
+            let cleaned = water_str.trim()
+                .replace(" ml", "").replace("ml", "")
+                .replace(" litre", "").replace("litre", "")
+                .replace(" lt", "").replace("lt", "")
+                .trim().to_string();
+            let amount = cleaned.parse::<i32>().unwrap_or(200);
             Ok(UserIntent::LogWater(amount))
         } else if let Some(cal_str) = response_text.strip_prefix("CALORIE_GOAL:") {
-            let amount = cal_str.parse::<i32>().unwrap_or(2000);
+            // Clean up units if AI added them (e.g., "2500 kcal" -> "2500")
+            let cleaned = cal_str.trim()
+                .replace(" kcal", "").replace("kcal", "")
+                .replace(" cal", "").replace("cal", "")
+                .trim().to_string();
+            let amount = cleaned.parse::<i32>().unwrap_or(2000);
             Ok(UserIntent::SetCalorieGoal(amount))
         } else if let Some(water_goal_str) = response_text.strip_prefix("WATER_GOAL:") {
-            let amount = water_goal_str.parse::<i32>().unwrap_or(2000);
+            // Clean up units if AI added them
+            let cleaned = water_goal_str.trim()
+                .replace(" ml", "").replace("ml", "")
+                .replace(" litre", "").replace("litre", "")
+                .replace(" lt", "").replace("lt", "")
+                .trim().to_string();
+            let amount = cleaned.parse::<i32>().unwrap_or(2000);
             Ok(UserIntent::SetWaterGoal(amount))
         } else if let Some(meal_time_str) = response_text.strip_prefix("MEAL_TIME:") {
             let parts: Vec<&str> = meal_time_str.split(':').collect();
             if parts.len() >= 3 {
-                let meal_type = parts[0].to_string();
-                let time = format!("{}:{}", parts[1], parts[2]);
+                let meal_type = parts[0].trim().to_string();
+                let time = format!("{}:{}", parts[1].trim(), parts[2].trim());
                 Ok(UserIntent::SetMealTime(meal_type, time))
             } else {
                 Ok(UserIntent::Unknown)
@@ -689,15 +732,16 @@ impl OpenRouterService {
         } else if let Some(silent_str) = response_text.strip_prefix("SILENT:") {
             let parts: Vec<&str> = silent_str.split(':').collect();
             if parts.len() >= 4 {
-                let start = format!("{}:{}", parts[0], parts[1]);
-                let end = format!("{}:{}", parts[2], parts[3]);
+                let start = format!("{}:{}", parts[0].trim(), parts[1].trim());
+                let end = format!("{}:{}", parts[2].trim(), parts[3].trim());
                 Ok(UserIntent::SetSilentHours(start, end))
             } else {
                 Ok(UserIntent::Unknown)
             }
         } else if let Some(cmd) = response_text.strip_prefix("COMMAND:") {
-            Ok(UserIntent::RunCommand(cmd.to_string()))
+            Ok(UserIntent::RunCommand(cmd.trim().to_string()))
         } else {
+            log::warn!("⚠️ Could not parse AI intent, treating as Unknown: '{}'", original_response);
             Ok(UserIntent::Unknown)
         }
     }
