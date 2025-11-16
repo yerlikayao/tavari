@@ -29,7 +29,7 @@ async fn main() -> Result<()> {
         .expect("OPENROUTER_API_KEY must be set in .env file");
 
     let openrouter_model = env::var("OPENROUTER_MODEL")
-        .unwrap_or_else(|_| "meta-llama/llama-4-scout:free".to_string());
+        .unwrap_or_else(|_| "qwen/qwen2.5-vl-32b-instruct:free".to_string());
 
     // Initialize PostgreSQL database
     let database_url = env::var("DATABASE_URL")
